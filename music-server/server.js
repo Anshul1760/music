@@ -9,7 +9,7 @@ const app = express();
 const PORT = 5001;
 
 // 🔥 Your YouTube Data API Key
-const YT_API_KEY = "key";
+const YT_API_KEY = "AIzaSyC4zWxUX9kNFzxEYx8HcWAL_d5SP_wLzQ8";
 
 app.use(cors());
 app.use(express.json());
