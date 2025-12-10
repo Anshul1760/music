@@ -1,17 +1,37 @@
-// server.js
+// music-server/server.js
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const pool = require("./db"); // MySQL connection file
-const playlistRoutes = require("./routes/playlistRoutes"); // ✅ new routes file
+const playlistRoutes = require("./routes/playlistRoutes"); // router for playlists
 
 const app = express();
-const PORT = 5001;
 
-// 🔥 Your YouTube Data API Key
-const YT_API_KEY = "AIzaSyC4zWxUX9kNFzxEYx8HcWAL_d5SP_wLzQ8";
- 
-app.use(cors());
+// === CONFIG ===
+// prefer environment variable for API key in production
+const YT_API_KEY = process.env.YT_API_KEY || "AIzaSyC4zWxUX9kNFzxEYx8HcWAL_d5SP_wLzQ8";
+
+// Configure CORS: allow your Vercel frontend + localhost (dev)
+const allowedOrigins = [
+  "https://musicmy-kappa.vercel.app",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // allow requests with no origin (e.g. mobile apps, curl)
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS policy: origin not allowed"));
+      }
+    },
+  })
+);
+
 app.use(express.json());
 
 // ================== HEALTH CHECK ==================
@@ -22,10 +42,8 @@ app.get("/", (req, res) => {
 // ================== YOUTUBE SEARCH ==================
 app.get("/api/youtube/search", async (req, res) => {
   const query = req.query.query || "";
-
   try {
     const ytUrl = "https://www.googleapis.com/youtube/v3/search";
-
     const response = await axios.get(ytUrl, {
       params: {
         key: YT_API_KEY,
@@ -45,7 +63,7 @@ app.get("/api/youtube/search", async (req, res) => {
 
     res.json({ query, results });
   } catch (err) {
-    console.error("YouTube API Error:", err.message);
+    console.error("YouTube API Error:", err.message || err);
     res.status(500).json({ error: "YouTube API Failed" });
   }
 });
@@ -96,7 +114,6 @@ app.post("/api/recent", async (req, res) => {
 /* =========================================================
                      MYSQL  — PLAYLISTS (via router)
 ========================================================= */
-// All routes starting with /api/playlists handled in routes/playlistRoutes.js
 app.use("/api/playlists", playlistRoutes);
 
 /* =========================================================
@@ -104,7 +121,6 @@ app.use("/api/playlists", playlistRoutes);
 ========================================================= */
 app.post("/api/liked/toggle", async (req, res) => {
   const { videoId, title, channel, thumbnail } = req.body;
-
   if (!videoId || !title) return res.json({ error: "Missing fields" });
 
   try {
@@ -150,8 +166,16 @@ app.post("/api/liked/toggle", async (req, res) => {
 });
 
 /* =========================================================
-                     START SERVER
+                     EXPORT / START SERVER
 ========================================================= */
-app.listen(PORT, () => {
-  console.log(` Backend Running → http://localhost:${PORT}`);
-});
+
+// Export the app so it can be used by a serverless wrapper (e.g. serverless-http)
+module.exports = app;
+
+// Only start listening when run directly (local dev)
+if (require.main === module) {
+  const PORT = process.env.PORT || 5001;
+  app.listen(PORT, () => {
+    console.log(` Backend Running → http://localhost:${PORT}`);
+  });
+}

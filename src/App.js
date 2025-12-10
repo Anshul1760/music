@@ -1,9 +1,12 @@
+// src/App.js
 import React, { useState, useEffect, useRef } from "react";
 import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
-const API_BASE = "http://localhost:5001";
+// Use relative API paths so frontend and backend can live on the same origin (Vercel).
+// If you prefer an env var, replace API with process.env.REACT_APP_API_URL || ''
+const API = "";
 
 function App() {
   const [query, setQuery] = useState("");
@@ -25,7 +28,7 @@ function App() {
   const [history, setHistory] = useState([]); // array of { results, query }
   const [searchActive, setSearchActive] = useState(false);
 
-  // Recently played and playlists (from MySQL)
+  // Recently played and playlists (from DB)
   const [recentPlayed, setRecentPlayed] = useState([]);
   const [playlists, setPlaylists] = useState([]);
 
@@ -50,8 +53,8 @@ function App() {
     const fetchInitialData = async () => {
       try {
         const [recentRes, playlistsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/recent`),
-          fetch(`${API_BASE}/api/playlists`),
+          fetch(`${API}/api/recent`),
+          fetch(`${API}/api/playlists`),
         ]);
 
         const recentData = await recentRes.json();
@@ -130,7 +133,6 @@ function App() {
 
     if (playerRef.current) {
       playerRef.current.loadVideoById(videoId);
-      // Autoplay when user clicked a song
       playerRef.current.playVideo();
     } else {
       playerRef.current = new window.YT.Player("yt-player-iframe", {
@@ -171,7 +173,7 @@ function App() {
     });
 
     // sync to backend (no await needed for UI)
-    fetch(`${API_BASE}/api/recent`, {
+    fetch(`${API}/api/recent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(song),
@@ -181,7 +183,7 @@ function App() {
   // Create new playlist (with backend)
   const handleCreatePlaylist = async (name) => {
     try {
-      const res = await fetch(`${API_BASE}/api/playlists`, {
+      const res = await fetch(`${API}/api/playlists`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
@@ -203,7 +205,7 @@ function App() {
   // Rename playlist (safe for 204 / empty responses)
   const handleRenamePlaylist = async (id, newName) => {
     try {
-      const res = await fetch(`${API_BASE}/api/playlists/${id}`, {
+      const res = await fetch(`${API}/api/playlists/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName }),
@@ -215,7 +217,6 @@ function App() {
         return;
       }
 
-      // Try to read JSON only if there is a response body
       const text = await res.text();
       if (text) {
         try {
@@ -230,8 +231,7 @@ function App() {
         }
       }
 
-      // Always refetch playlists after successful rename
-      const res2 = await fetch(`${API_BASE}/api/playlists`);
+      const res2 = await fetch(`${API}/api/playlists`);
       const data2 = await res2.json();
       if (data2.playlists) {
         setPlaylists(
@@ -247,13 +247,13 @@ function App() {
   // Add song to playlist
   const handleAddSongToPlaylist = async (playlistId, song) => {
     try {
-      await fetch(`${API_BASE}/api/playlists/${playlistId}/songs`, {
+      await fetch(`${API}/api/playlists/${playlistId}/songs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(song),
       });
 
-      const res = await fetch(`${API_BASE}/api/playlists`);
+      const res = await fetch(`${API}/api/playlists`);
       const data = await res.json();
       if (data.playlists) {
         setPlaylists(
@@ -268,11 +268,11 @@ function App() {
   // Remove song from playlist
   const handleRemoveSongFromPlaylist = async (playlistId, videoId) => {
     try {
-      await fetch(`${API_BASE}/api/playlists/${playlistId}/songs/${videoId}`, {
+      await fetch(`${API}/api/playlists/${playlistId}/songs/${videoId}`, {
         method: "DELETE",
       });
 
-      const res = await fetch(`${API_BASE}/api/playlists`);
+      const res = await fetch(`${API}/api/playlists`);
       const data = await res.json();
       if (data.playlists) {
         setPlaylists(
@@ -287,7 +287,7 @@ function App() {
   // Delete playlist (safe for 204 / empty responses)
   const handleDeletePlaylist = async (playlistId) => {
     try {
-      const res = await fetch(`${API_BASE}/api/playlists/${playlistId}`, {
+      const res = await fetch(`${API}/api/playlists/${playlistId}`, {
         method: "DELETE",
       });
 
@@ -297,20 +297,7 @@ function App() {
         return;
       }
 
-      // If backend returns 204 or empty body, we don't parse JSON
-      // If backend returns JSON, we can optionally read it:
-      // const text = await res.text();
-      // if (text) {
-      //   const data = JSON.parse(text);
-      //   if (data.error) {
-      //     console.error("Delete playlist error:", data.error);
-      //     alert(data.error);
-      //     return;
-      //   }
-      // }
-
-      // After successful delete, refresh playlists
-      const res2 = await fetch(`${API_BASE}/api/playlists`);
+      const res2 = await fetch(`${API}/api/playlists`);
       const data2 = await res2.json();
       if (data2.playlists) {
         setPlaylists(
@@ -328,7 +315,7 @@ function App() {
     if (!currentYt) return;
 
     try {
-      const res = await fetch(`${API_BASE}/api/liked/toggle`, {
+      const res = await fetch(`${API}/api/liked/toggle`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(currentYt),
@@ -340,8 +327,7 @@ function App() {
         return;
       }
 
-      // refresh playlists to reflect latest liked state
-      const plRes = await fetch(`${API_BASE}/api/playlists`);
+      const plRes = await fetch(`${API}/api/playlists`);
       const plData = await plRes.json();
       if (plData.playlists) {
         setPlaylists(
@@ -373,7 +359,7 @@ function App() {
 
     try {
       const res = await fetch(
-        `${API_BASE}/api/youtube/search?query=${encodeURIComponent(query)}`
+        `${API}/api/youtube/search?query=${encodeURIComponent(query)}`
       );
       const data = await res.json();
 
