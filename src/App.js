@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
@@ -78,14 +78,14 @@ function App() {
     fetchInitialData();
   }, []);
 
-  const stopTimeUpdates = () => {
+  const stopTimeUpdates = useCallback(() => {
     if (timeIntervalRef.current) {
       clearInterval(timeIntervalRef.current);
       timeIntervalRef.current = null;
     }
-  };
+  }, []);
 
-  const startTimeUpdates = () => {
+  const startTimeUpdates = useCallback(() => {
     stopTimeUpdates();
     timeIntervalRef.current = setInterval(() => {
       if (playerRef.current && playerRef.current.getDuration) {
@@ -95,32 +95,35 @@ function App() {
         setDuration(dur);
       }
     }, 500);
-  };
+  }, [stopTimeUpdates]);
 
   // Player event handlers
-  const handlePlayerReady = (event) => {
+  const handlePlayerReady = useCallback((event) => {
     const dur = event.target.getDuration() || 0;
     setDuration(dur);
-  };
+  }, []);
 
-  const handlePlayerStateChange = (event) => {
-    const YT = window.YT;
-    if (!YT) return;
+  const handlePlayerStateChange = useCallback(
+    (event) => {
+      const YT = window.YT;
+      if (!YT) return;
 
-    if (event.data === YT.PlayerState.PLAYING) {
-      setIsPlaying(true);
-      startTimeUpdates();
-    } else if (
-      event.data === YT.PlayerState.PAUSED ||
-      event.data === YT.PlayerState.ENDED
-    ) {
-      setIsPlaying(false);
-      if (event.data === YT.PlayerState.ENDED && duration) {
-        setCurrentTime(duration);
+      if (event.data === YT.PlayerState.PLAYING) {
+        setIsPlaying(true);
+        startTimeUpdates();
+      } else if (
+        event.data === YT.PlayerState.PAUSED ||
+        event.data === YT.PlayerState.ENDED
+      ) {
+        setIsPlaying(false);
+        if (event.data === YT.PlayerState.ENDED && duration) {
+          setCurrentTime(duration);
+        }
+        stopTimeUpdates();
       }
-      stopTimeUpdates();
-    }
-  };
+    },
+    [duration, startTimeUpdates, stopTimeUpdates]
+  );
 
   // When current video changes, load it into the player and AUTOPLAY
   useEffect(() => {
@@ -147,7 +150,7 @@ function App() {
         },
       });
     }
-  }, [playerApiReady, currentYt]);
+  }, [playerApiReady, currentYt, handlePlayerReady, handlePlayerStateChange]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -157,8 +160,7 @@ function App() {
         playerRef.current.destroy();
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [stopTimeUpdates]);
 
   // Select a song (from results, recent, playlist) + update recentPlayed (local + DB)
   const handleSelectSong = (song) => {
@@ -429,7 +431,9 @@ function App() {
 
   const handleSkipForward = () => {
     if (!playerRef.current) return;
-    const dur = duration || (playerRef.current.getDuration?.() || 0);
+    const dur = duration || (playerRef.curr
+::contentReference[oaicite:0]{index=0}
+ent.getDuration?.() || 0);
     const ct = playerRef.current.getCurrentTime
       ? playerRef.current.getCurrentTime()
       : currentTime;
