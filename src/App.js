@@ -26,6 +26,10 @@ export default function App() {
   const instantiateTimerRef = useRef(null); // a single timer for fallback instantiation
   const iframeIdRef = useRef(null); // current iframe id
 
+  // refs to hold functions/flags so we avoid circular hook deps
+  const createIframeAndPlayerRef = useRef(null);
+  const shouldAutoPlayRef = useRef(false);
+
   // recovery counters
   const recoveryAttemptsRef = useRef(0);
   const shortPauseCountRef = useRef(0);
@@ -42,7 +46,7 @@ export default function App() {
   const trackBarRef = useRef(null);
 
   // app lists
-  const [history, setHistory] = useState([]);
+  const [, setHistory] = useState([]); // we only use the setter; avoid "assigned but never used"
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
   const [playlists, setPlaylists] = useState([]);
@@ -66,7 +70,7 @@ export default function App() {
     };
   }, []);
 
-  // ---------------- initial data ----------------
+  // ---------------- initial data + restore current song ----------------
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -85,6 +89,19 @@ export default function App() {
       }
     };
     fetchInitialData();
+
+    // restore current playing song from localStorage (persist across refresh)
+    try {
+      const saved = localStorage.getItem("currentYt");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.videoId) {
+          setCurrentYt(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to parse saved currentYt:", e);
+    }
   }, []);
 
   // ---------------- time updates ----------------
@@ -140,7 +157,7 @@ export default function App() {
               try { playerRef.current.destroy?.(); } catch {}
               playerRef.current = null;
               recoveryAttemptsRef.current = 0;
-              setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
+              setTimeout(() => { if (vid) createIframeAndPlayerRef.current?.(vid); }, 200);
             } else {
               tryRecoverPlayback();
             }
@@ -162,7 +179,21 @@ export default function App() {
     try { event.target.mute?.(); } catch {}
     try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch {}
     console.log("[YT] player ready");
-  }, []);
+
+    // If the user clicked a song (user gesture) and we want to autoplay
+    if (shouldAutoPlayRef.current) {
+      try {
+        event.target.unMute?.();
+        event.target.playVideo?.();
+        setUserStartedPlayback(true);
+      } catch (e) {
+        console.warn("[AUTOPLAY] failed to start on ready:", e);
+        tryRecoverPlayback();
+      } finally {
+        shouldAutoPlayRef.current = false;
+      }
+    }
+  }, [tryRecoverPlayback]);
 
   const handlePlayerStateChange = useCallback((event) => {
     const YT = window.YT;
@@ -192,7 +223,7 @@ export default function App() {
             playerRef.current = null;
             shortPauseCountRef.current = 0;
             recoveryAttemptsRef.current = 0;
-            setTimeout(() => { if (vid) createIframeAndPlayer(vid); setTimeout(() => { tryRecoverPlayback(); }, 600); }, 200);
+            setTimeout(() => { if (vid) createIframeAndPlayerRef.current?.(vid); setTimeout(() => { tryRecoverPlayback(); }, 600); }, 200);
             return;
           } else {
             tryRecoverPlayback();
@@ -207,7 +238,8 @@ export default function App() {
   }, [duration, startTimeUpdates, stopTimeUpdates, tryRecoverPlayback, userStartedPlayback, currentYt]);
 
   // ---------------- serialize iframe/player creation ----------------
-  const createIframeAndPlayer = useCallback((videoId) => {
+  // The "func" below is assigned to createIframeAndPlayerRef so other callbacks can call it without being forced to list it as a dependency.
+  const createIframeAndPlayerFunc = useCallback((videoId) => {
     if (creatingRef.current) {
       if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
         try { playerRef.current.loadVideoById(videoId); } catch {}
@@ -241,9 +273,7 @@ export default function App() {
     }
 
     container.innerHTML = "";
-    const origin = encodeURIComponent(window.location.origin || "");
-    const iframeHost = "https://www.youtube-nocookie.com";
-    const src = `${iframeHost}/embed/${videoId}?enablejsapi=1&autoplay=0&playsinline=1&controls=0&origin=${origin}`;
+    // removed unused `origin` and `iframeHost` variables
 
     const instanceId = `yt-player-el-${Date.now()}`;
     iframeIdRef.current = instanceId;
@@ -253,7 +283,7 @@ export default function App() {
     wrapper.style.height = "100%";
     container.appendChild(wrapper);
 
-    console.log("[CREATE] wrapper appended; scheduling src attach");
+    console.log("[CREATE] wrapper appended; scheduling player instantiation");
 
     requestAnimationFrame(() => {
       try {
@@ -320,6 +350,9 @@ export default function App() {
     }, 900);
   }, [handlePlayerReady, handlePlayerStateChange, tryRecoverPlayback]);
 
+  // expose function via ref so other callbacks don't need to list it in deps
+  createIframeAndPlayerRef.current = createIframeAndPlayerFunc;
+
   // ---------------- when selected video changes ----------------
   useEffect(() => {
     if (!playerApiReady || !currentYt) return;
@@ -330,9 +363,8 @@ export default function App() {
     shortPauseCountRef.current = 0;
     setUserStartedPlayback(false);
 
-    // create the iframe/player (serialized)
-    createIframeAndPlayer(currentYt.videoId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // create the iframe/player (serialized) via ref
+    createIframeAndPlayerRef.current?.(currentYt.videoId);
   }, [playerApiReady, currentYt]);
 
   // ---------------- cleanup ----------------
@@ -372,6 +404,18 @@ export default function App() {
   // ---------------- select song + recent save ----------------
   const handleSelectSong = useCallback((song) => {
     if (!song) return;
+
+    // persist current song so it survives refresh
+    try {
+      localStorage.setItem("currentYt", JSON.stringify(song));
+    } catch (e) {
+      console.warn("Failed to persist currentYt:", e);
+    }
+
+    // request player creation / load (the currentYt useEffect will call create)
+    // and mark that we should auto-play once the player is ready (user gesture)
+    shouldAutoPlayRef.current = true;
+
     setCurrentYt(song);
     setRecentPlayed((prev) => {
       const filtered = prev.filter((s) => s.videoId !== song.videoId);
