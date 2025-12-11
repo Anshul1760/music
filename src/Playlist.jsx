@@ -244,7 +244,7 @@ function Playlist({
                 className="playlist-overlay-back"
                 onClick={handleCloseOverlay}
               >
-                ← Back
+                🔙
               </button>
 
               <div className="playlist-overlay-title-block">
