@@ -4,7 +4,7 @@ import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
-const API = process.env.REACT_APP_API_URL;
+const API = process.env.REACT_APP_API_URL?.replace(/\/$/, "");
 
 
 export default function App() {

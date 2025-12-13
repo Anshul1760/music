@@ -21,7 +21,7 @@ if (process.env.ALLOWED_ORIGINS) {
   allowedOrigins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://musicmy-kappa.vercel.app",
+    "https://music123-three.vercel.app",
   ];
 }
 
@@ -34,18 +34,16 @@ console.log("✅ Allowed origins:", allowedOrigins);
 app.use(
   cors({
     origin: function (origin, callback) {
-      // allow server-to-server / curl
       if (!origin) return callback(null, true);
-
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error("Not allowed by CORS"));
     },
-    credentials: true,
+    credentials: true
   })
 );
+
 
 /* =========================================================
                     JSON MIDDLEWARE
