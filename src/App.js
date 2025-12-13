@@ -4,13 +4,8 @@ import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
-const API =
-  process.env.REACT_APP_API_URL ||
-  (typeof window !== "undefined" &&
-  (window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1")
-    ? "http://localhost:5001"
-    : "");
+const API = process.env.REACT_APP_API_URL;
+
 
 export default function App() {
   // --- App state ---
@@ -78,8 +73,12 @@ export default function App() {
           fetch(`${API}/api/recent`),
           fetch(`${API}/api/playlists`),
         ]);
-        const recentData = await recentRes.json();
-        const playlistsData = await playlistsRes.json();
+        if (!recentRes.ok) throw new Error("Recent API failed");
+if (!playlistsRes.ok) throw new Error("Playlists API failed");
+
+const recentData = await recentRes.json();
+const playlistsData = await playlistsRes.json();
+
         setRecentPlayed(recentData.recent || []);
         if (playlistsData.playlists) {
           setPlaylists(playlistsData.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
@@ -88,7 +87,11 @@ export default function App() {
         console.error("Error loading initial data:", err);
       }
     };
-    fetchInitialData();
+if (API) {
+  fetchInitialData();
+} else {
+  console.error("❌ API URL missing (check Vercel env variable)");
+}
 
     // restore current playing song from localStorage (persist across refresh)
     try {
