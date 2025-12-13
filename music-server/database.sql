@@ -1,4 +1,4 @@
--- optional users table (you can ignore and just use user_id = 1 everywhere)
+-- database.sql
 CREATE DATABASE musicdb;
 USE musicdb;
 CREATE TABLE IF NOT EXISTS users (
