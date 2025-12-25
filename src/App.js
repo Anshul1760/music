@@ -74,9 +74,22 @@ export default function App() {
           fetch(`${API}/api/recent`),
           fetch(`${API}/api/playlists`),
         ]);
+        
         const recentData = await recentRes.json();
+
+const normalizedRecent = Array.isArray(recentData)
+  ? recentData.map((s) => ({
+      videoId: s.videoId,
+      title: s.title,
+      channel: s.channel,
+      thumbnail: s.thumbnail,
+    }))
+  : [];
+
+setRecentPlayed(normalizedRecent);
+
         const playlistsData = await playlistsRes.json();
-        setRecentPlayed(Array.isArray(recentData) ? recentData : []);
+        
         if (playlistsData.playlists) {
           setPlaylists(playlistsData.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
         }
