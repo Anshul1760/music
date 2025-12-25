@@ -1,7 +1,9 @@
 // music-server/server.js
+
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const initDb = require("./initDb");
 const axios = require("axios");
 const pool = require("./db"); // MySQL connection file (must read envs inside)
 const playlistRoutes = require("./routes/playlistRoutes"); // router for playlists
@@ -63,6 +65,10 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// 🔹 Initialize DB (create tables if missing)
+initDb();
+
 
 // ================== HEALTH CHECK ==================
 app.get("/", (req, res) => {
