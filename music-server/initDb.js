@@ -3,7 +3,9 @@ const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
 
-async function initDb() {
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+async function initDb(retries = 5) {
   let connection;
 
   try {
@@ -11,25 +13,24 @@ async function initDb() {
 
     const isProduction = process.env.NODE_ENV === "production";
 
-    if (
-      !process.env.DB_HOST ||
-      !process.env.DB_USER ||
-      !process.env.DB_NAME
-    ) {
+    // 🔒 Basic env validation
+    if (!process.env.DB_HOST || !process.env.DB_USER || !process.env.DB_NAME) {
       throw new Error("Database environment variables not set");
     }
 
     connection = await mysql.createConnection({
       host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT) || 3306,
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
 
-      multipleStatements: true,
-      connectTimeout: 30000,
+      // ⚠️ IMPORTANT: DO NOT FORCE PORT ON RAILWAY
+      port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
 
-      // 🔐 SSL only in production (Railway)
+      connectTimeout: 30000,
+      multipleStatements: true,
+
+      // 🔐 SSL required for Railway
       ...(isProduction && {
         ssl: { rejectUnauthorized: false },
       }),
@@ -37,7 +38,7 @@ async function initDb() {
 
     console.log("✅ DB connection successful");
 
-    // 📄 Load SQL schema (tables only, no CREATE DATABASE)
+    // 📄 Load schema
     const sqlPath = path.join(__dirname, "database.sql");
     if (!fs.existsSync(sqlPath)) {
       throw new Error("database.sql file not found");
@@ -48,7 +49,7 @@ async function initDb() {
     await connection.query(sql);
     console.log("✅ Tables ensured");
 
-    // 🎵 Ensure default "Liked Songs" playlist exists
+    // 🎵 Ensure default playlist
     const [rows] = await connection.query(
       "SELECT id FROM playlists WHERE user_id = 1 AND is_default = 1 LIMIT 1"
     );
@@ -62,7 +63,16 @@ async function initDb() {
       console.log("ℹ️ Default playlist already exists");
     }
   } catch (err) {
-    console.error("❌ DB init error:", err);
+    console.error("❌ DB init error:", err.message);
+
+    // 🔁 RETRY (CRITICAL FOR RAILWAY)
+    if (retries > 0) {
+      console.log(`🔁 Retrying DB init (${retries} retries left) in 5s...`);
+      await sleep(5000);
+      return initDb(retries - 1);
+    } else {
+      console.error("❌ DB init failed after retries");
+    }
   } finally {
     if (connection) {
       await connection.end();
