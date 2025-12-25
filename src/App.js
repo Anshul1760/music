@@ -76,7 +76,7 @@ export default function App() {
         ]);
         const recentData = await recentRes.json();
         const playlistsData = await playlistsRes.json();
-        setRecentPlayed(recentData.recent || []);
+        setRecentPlayed(Array.isArray(recentData) ? recentData : []);
         if (playlistsData.playlists) {
           setPlaylists(playlistsData.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
         }

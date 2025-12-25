@@ -10,7 +10,11 @@ const app = express();
 
 // === CONFIG ===
 // prefer environment variable for API key in production
-const YT_API_KEY = process.env.YT_API_KEY || "AIzaSyC4zWxUX9kNFzxEYx8HcWAL_d5SP_wLzQ8";
+const YT_API_KEY = process.env.YT_API_KEY ;
+if (!YT_API_KEY) {
+  console.warn("⚠️ YT_API_KEY is not set. /api/youtube/search will fail.");
+}
+
 
 // allowed origins list (comma-separated env or defaults)
 let allowedOrigins;
@@ -20,7 +24,7 @@ if (typeof process.env.ALLOWED_ORIGINS === "string" && process.env.ALLOWED_ORIGI
   allowedOrigins = process.env.ALLOWED_ORIGINS;
 } else {
   allowedOrigins = [
-    "https://musicmy-kappa.vercel.app",
+    "https://music123-three.vercel.app/",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
   ];
@@ -148,7 +152,7 @@ app.get("/api/recent", async (req, res) => {
     const [rows] = await pool.query(
       "SELECT videoId, title, channel, thumbnail FROM recent_played ORDER BY played_at DESC LIMIT 10"
     );
-    res.json({ recent: rows });
+    res.json(rows);
   } catch (err) {
     console.error("Recent fetch failed:", err);
     res.status(500).json({ error: "Recent fetch failed" });

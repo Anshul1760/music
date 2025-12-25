@@ -1,4 +1,4 @@
--- optional users table (you can ignore and just use user_id = 1 everywhere)
+
 CREATE DATABASE musicdb;
 USE musicdb;
 CREATE TABLE IF NOT EXISTS users (
@@ -26,9 +26,16 @@ CREATE TABLE IF NOT EXISTS playlist_songs (
   channel VARCHAR(255),
   thumbnail VARCHAR(500),
   added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
   UNIQUE KEY uniq_playlist_song (playlist_id, videoId),
-  FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE
+  KEY idx_playlist_id (playlist_id),
+
+  CONSTRAINT fk_playlist
+    FOREIGN KEY (playlist_id)
+    REFERENCES playlists(id)
+    ON DELETE CASCADE
 );
+
 
 -- recently played (we’ll keep last N per user)
 CREATE TABLE IF NOT EXISTS recent_played (
