@@ -35,35 +35,15 @@ if (typeof process.env.ALLOWED_ORIGINS === "string" && process.env.ALLOWED_ORIGI
 
 console.log("Allowed origins:", allowedOrigins);
 
-// CORS configuration: allow no-origin requests (curl, server-to-server),
-// allow configured origins, otherwise do NOT set CORS headers.
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // allow requests with no origin (mobile apps, curl, server-to-server)
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: allowedOrigins,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
 
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
 
-      // Do not allow origin
-      return callback(null, false);
-    },
-    optionsSuccessStatus: 200,
-  })
-);
-
-// If an incoming request is from a disallowed origin, return JSON 403 for API calls
-app.use((req, res, next) => {
-  const origin = req.get("origin");
-  if (origin && !allowedOrigins.includes(origin)) {
-    if (req.path.startsWith("/api/")) {
-      return res.status(403).json({ error: "CORS policy: origin not allowed" });
-    }
-  }
-  next();
-});
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions)); // 🔴 REQUIRED for preflight
 
 app.use(express.json());
 
@@ -150,49 +130,6 @@ app.get("/api/youtube/search", async (req, res) => {
     return res.status(500).json({ error: "YouTube API Failed", details: err.message || "unknown" });
   }
 });
-
-/* =========================================================
-                     MYSQL  — RECENTLY PLAYED
-========================================================= */
-// app.get("/api/recent", async (req, res) => {
-//   try {
-//     const [rows] = await pool.query(
-//       "SELECT videoId, title, channel, thumbnail FROM recent_played ORDER BY played_at DESC LIMIT 10"
-//     );
-//     res.json(rows);
-//   } catch (err) {
-//     console.error("Recent fetch failed:", err);
-//     res.status(500).json({ error: "Recent fetch failed" });
-//   }
-// });
-
-// app.post("/api/recent", async (req, res) => {
-//   const { videoId, title, channel, thumbnail } = req.body;
-//   if (!videoId || !title) return res.status(400).json({ error: "Missing data" });
-
-  // try {
-  //   await pool.query(
-  //     `INSERT INTO recent_played (videoId,title,channel,thumbnail)
-  //      VALUES (?,?,?,?)
-  //      ON DUPLICATE KEY UPDATE played_at=CURRENT_TIMESTAMP`,
-  //     [videoId, title, channel || "", thumbnail || ""]
-  //   );
-
-  //   await pool.query(
-  //     `DELETE FROM recent_played 
-  //      WHERE id NOT IN(
-  //        SELECT id FROM(
-  //          SELECT id FROM recent_played ORDER BY played_at DESC LIMIT 20
-  //        ) as t
-  //      )`
-  //   );
-
-//     res.json({ success: true });
-//   } catch (err) {
-//     console.error("Recent save failed:", err);
-//     res.status(500).json({ error: "Recent save failed" });
-//   }
-// });
 
 /* =========================================================
                      MYSQL  — PLAYLISTS (via router)
