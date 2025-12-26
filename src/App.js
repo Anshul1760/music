@@ -39,6 +39,10 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
+  useEffect(() => {
+  console.log("recentPlayed at render:", recentPlayed);
+}, [recentPlayed]);
+
   const [playlists, setPlaylists] = useState([]);
 
   // ---------------- YT API loader ----------------
