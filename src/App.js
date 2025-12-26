@@ -4,7 +4,9 @@ import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
-const API = process.env.REACT_APP_API_URL;
+const API = process.env.REACT_APP_API_URL || "";
+console.log("🌐 API URL:", API);
+
 
 export default function App() {
   // --- App state ---
@@ -65,51 +67,42 @@ export default function App() {
   }, []);
 
   // ---------------- initial data ----------------
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        /* =======================
-           FETCH RECENT
-        ======================= */
-        const recentRes = await fetch(`${API}/api/recent`);
+ useEffect(() => {
+  console.log("🚀 Fetching recent played (on mount)");
 
-        if (!recentRes.ok) {
-          console.error("Failed to fetch recent:", recentRes.status);
-          setRecentPlayed([]);
-        } else {
-          const recentData = await recentRes.json();
+  const fetchRecent = async () => {
+    try {
+      const res = await fetch(`${API}/api/recent`);
+      console.log("📡 recent status:", res.status);
 
-          const normalizedRecent = Array.isArray(recentData)
-            ? recentData.map((s) => ({
-              videoId: s.videoId,
-              title: s.title,
-              channel: s.channel,
-              thumbnail: s.thumbnail,
-            }))
-            : [];
-
-          setRecentPlayed(normalizedRecent);
-        }
-
-        /* =======================
-           FETCH PLAYLISTS
-        ======================= */
-        const playlistsRes = await fetch(`${API}/api/playlists`);
-        if (!playlistsRes.ok) {
-          console.error("Failed to fetch playlists:", playlistsRes.status);
-        } else {
-          const playlistsData = await playlistsRes.json();
-          setPlaylists(playlistsData.playlists || []);
-        }
-
-      } catch (err) {
-        console.error("Initial fetch error:", err);
+      if (!res.ok) {
+        console.error("❌ Failed to fetch recent");
+        setRecentPlayed([]);
+        return;
       }
-    };
 
-    fetchInitialData();
-  }, []);
+      const data = await res.json();
+      console.log("📦 recent raw data:", data);
 
+      const normalized = Array.isArray(data)
+        ? data.map((s) => ({
+            videoId: s.videoId,
+            title: s.title,
+            channel: s.channel,
+            thumbnail: s.thumbnail,
+          }))
+        : [];
+
+      console.log("✅ recent normalized:", normalized);
+      setRecentPlayed(normalized);
+    } catch (err) {
+      console.error("🔥 recent fetch error:", err);
+      setRecentPlayed([]);
+    }
+  };
+
+  fetchRecent();
+}, []); // 🔴 IMPORTANT: EMPTY DEPENDENCY ARRAY
 
   // ---------------- time updates ----------------
   const stopTimeUpdates = useCallback(() => {
