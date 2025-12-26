@@ -36,11 +36,10 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const timeIntervalRef = useRef(null);
   const trackBarRef = useRef(null);
-
-  // app lists
-  const [history, setHistory] = useState([]);
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
+  const [history, setHistory] = useState([]);
+
   useEffect(() => {
     console.log("recentPlayed at render:", recentPlayed);
   }, [recentPlayed]);
@@ -67,42 +66,42 @@ export default function App() {
   }, []);
 
   // ---------------- initial data ----------------
- useEffect(() => {
-  console.log("🚀 Fetching recent played (on mount)");
+  useEffect(() => {
+    console.log("🚀 Fetching recent played (on mount)");
 
-  const fetchRecent = async () => {
-    try {
-      const res = await fetch(`${API}/api/recent`);
-      console.log("📡 recent status:", res.status);
+    const fetchRecent = async () => {
+      try {
+        const res = await fetch(`${API}/api/recent`);
+        console.log("📡 recent status:", res.status);
 
-      if (!res.ok) {
-        console.error("❌ Failed to fetch recent");
-        setRecentPlayed([]);
-        return;
-      }
+        if (!res.ok) {
+          console.error("❌ Failed to fetch recent");
+          setRecentPlayed([]);
+          return;
+        }
 
-      const data = await res.json();
-      console.log("📦 recent raw data:", data);
+        const data = await res.json();
+        console.log("📦 recent raw data:", data);
 
-      const normalized = Array.isArray(data)
-        ? data.map((s) => ({
+        const normalized = Array.isArray(data)
+          ? data.map((s) => ({
             videoId: s.videoId,
             title: s.title,
             channel: s.channel,
             thumbnail: s.thumbnail,
           }))
-        : [];
+          : [];
 
-      console.log("✅ recent normalized:", normalized);
-      setRecentPlayed(normalized);
-    } catch (err) {
-      console.error("🔥 recent fetch error:", err);
-      setRecentPlayed([]);
-    }
-  };
+        console.log("✅ recent normalized:", normalized);
+        setRecentPlayed(normalized);
+      } catch (err) {
+        console.error("🔥 recent fetch error:", err);
+        setRecentPlayed([]);
+      }
+    };
 
-  fetchRecent();
-}, []); // 🔴 IMPORTANT: EMPTY DEPENDENCY ARRAY
+    fetchRecent();
+  }, []); // 🔴 IMPORTANT: EMPTY DEPENDENCY ARRAY
 
   // ---------------- time updates ----------------
   const stopTimeUpdates = useCallback(() => {
@@ -125,11 +124,14 @@ export default function App() {
   }, [stopTimeUpdates]);
 
   // ---------------- recovery ----------------
+
+
   const tryRecoverPlayback = useCallback(() => {
     if (!userStartedPlayback || !playerRef.current || !window.YT) return;
 
     const MAX = 4;
     const RECREATE_AFTER = 3;
+
     if (recoveryAttemptsRef.current >= MAX) {
       console.warn("[RECOVER] max attempts reached");
       return;
@@ -138,40 +140,34 @@ export default function App() {
     recoveryAttemptsRef.current += 1;
     const attempt = recoveryAttemptsRef.current;
     const delay = 300 * attempt;
-    console.warn(`[RECOVER] attempt #${attempt} in ${delay}ms`);
 
     setTimeout(() => {
       try {
         playerRef.current.playVideo?.();
-      } catch (e) {
-        console.warn("[RECOVER] playVideo error:", e);
-      }
+      } catch { }
 
       setTimeout(() => {
         try {
           const state = playerRef.current.getPlayerState?.();
           if (state !== window.YT.PlayerState.PLAYING) {
             if (recoveryAttemptsRef.current >= RECREATE_AFTER) {
-              console.warn("[RECOVER] recreating player");
               const vid = currentYt?.videoId;
               try { playerRef.current.destroy?.(); } catch { }
               playerRef.current = null;
               recoveryAttemptsRef.current = 0;
-              setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
+              if (vid) createIframeAndPlayer(vid);
             } else {
               tryRecoverPlayback();
             }
           } else {
-            // success
             recoveryAttemptsRef.current = 0;
-            shortPauseCountRef.current = 0;
           }
-        } catch (e) {
-          console.warn("[RECOVER] final check error:", e);
-        }
+        } catch { }
       }, 450);
     }, delay);
-  }, [userStartedPlayback, currentYt]);
+  }, [userStartedPlayback, currentYt, createIframeAndPlayer]);
+
+
 
   // ---------------- player handlers ----------------
   const handlePlayerReady = useCallback((event) => {
@@ -221,9 +217,8 @@ export default function App() {
         console.warn("[SHORT-PAUSE] check failed:", e);
       }
     }
-  }, [duration, startTimeUpdates, stopTimeUpdates, tryRecoverPlayback, userStartedPlayback, currentYt]);
+  }, [duration, startTimeUpdates, stopTimeUpdates, userStartedPlayback, currentYt, createIframeAndPlayer]);
 
-  // ---------------- serialize iframe/player creation ----------------
   const createIframeAndPlayer = useCallback((videoId) => {
     if (creatingRef.current) {
       if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
@@ -258,9 +253,6 @@ export default function App() {
     }
 
     container.innerHTML = "";
-    const origin = encodeURIComponent(window.location.origin || "");
-    const iframeHost = "https://www.youtube-nocookie.com";
-    const src = `${iframeHost}/embed/${videoId}?enablejsapi=1&autoplay=0&playsinline=1&controls=0&origin=${origin}`;
 
     const instanceId = `yt-player-el-${Date.now()}`;
     iframeIdRef.current = instanceId;
@@ -336,8 +328,6 @@ export default function App() {
       }
     }, 900);
   }, [handlePlayerReady, handlePlayerStateChange, tryRecoverPlayback]);
-
-  // ---------------- when selected video changes ----------------
   useEffect(() => {
     if (!playerApiReady || !currentYt) return;
     setIsPlaying(false);
@@ -349,8 +339,8 @@ export default function App() {
 
     // create the iframe/player (serialized)
     createIframeAndPlayer(currentYt.videoId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerApiReady, currentYt]);
+  }, [playerApiReady, currentYt, createIframeAndPlayer]);
+
 
   // ---------------- cleanup ----------------
   useEffect(() => {
@@ -384,7 +374,7 @@ export default function App() {
       console.warn("[USER PLAY] failed, invoking recovery:", e);
       tryRecoverPlayback();
     }
-  }, [tryRecoverPlayback]);
+  }, []);
 
   // ---------------- select song + recent save ----------------
   const handleSelectSong = useCallback((song) => {
@@ -496,7 +486,7 @@ export default function App() {
       setSearchActive(newHistory.length > 0);
       return newHistory;
     });
-  }, []);
+  }, [setHistory]);
 
   // ---------------- controls ----------------
   const handleTogglePlay = useCallback(() => {
