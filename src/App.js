@@ -62,37 +62,50 @@ export default function App() {
 
   // ---------------- initial data ----------------
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        const [recentRes, playlistsRes] = await Promise.all([
-          fetch(`${API}/api/recent`),
-          fetch(`${API}/api/playlists`),
-        ]);
-        
+  const fetchInitialData = async () => {
+    try {
+      /* =======================
+         FETCH RECENT
+      ======================= */
+      const recentRes = await fetch(`${API}/api/recent`);
+
+      if (!recentRes.ok) {
+        console.error("Failed to fetch recent:", recentRes.status);
+        setRecentPlayed([]);
+      } else {
         const recentData = await recentRes.json();
 
-const normalizedRecent = Array.isArray(recentData)
-  ? recentData.map((s) => ({
-      videoId: s.videoId,
-      title: s.title,
-      channel: s.channel,
-      thumbnail: s.thumbnail,
-    }))
-  : [];
+        const normalizedRecent = Array.isArray(recentData)
+          ? recentData.map((s) => ({
+              videoId: s.videoId,
+              title: s.title,
+              channel: s.channel,
+              thumbnail: s.thumbnail,
+            }))
+          : [];
 
-setRecentPlayed(normalizedRecent);
-
-        const playlistsData = await playlistsRes.json();
-        
-        if (playlistsData.playlists) {
-          setPlaylists(playlistsData.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-        }
-      } catch (err) {
-        console.error("Error loading initial data:", err);
+        setRecentPlayed(normalizedRecent);
       }
-    };
-    fetchInitialData();
-  }, []);
+
+      /* =======================
+         FETCH PLAYLISTS
+      ======================= */
+      const playlistsRes = await fetch(`${API}/api/playlists`);
+      if (!playlistsRes.ok) {
+        console.error("Failed to fetch playlists:", playlistsRes.status);
+      } else {
+        const playlistsData = await playlistsRes.json();
+        setPlaylists(playlistsData.playlists || []);
+      }
+
+    } catch (err) {
+      console.error("Initial fetch error:", err);
+    }
+  };
+
+  fetchInitialData();
+}, []);
+
 
   // ---------------- time updates ----------------
   const stopTimeUpdates = useCallback(() => {
