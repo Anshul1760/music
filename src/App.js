@@ -40,8 +40,8 @@ export default function App() {
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
   useEffect(() => {
-  console.log("recentPlayed at render:", recentPlayed);
-}, [recentPlayed]);
+    console.log("recentPlayed at render:", recentPlayed);
+  }, [recentPlayed]);
 
   const [playlists, setPlaylists] = useState([]);
 
@@ -66,49 +66,49 @@ export default function App() {
 
   // ---------------- initial data ----------------
   useEffect(() => {
-  const fetchInitialData = async () => {
-    try {
-      /* =======================
-         FETCH RECENT
-      ======================= */
-      const recentRes = await fetch(`${API}/api/recent`);
+    const fetchInitialData = async () => {
+      try {
+        /* =======================
+           FETCH RECENT
+        ======================= */
+        const recentRes = await fetch(`${API}/api/recent`);
 
-      if (!recentRes.ok) {
-        console.error("Failed to fetch recent:", recentRes.status);
-        setRecentPlayed([]);
-      } else {
-        const recentData = await recentRes.json();
+        if (!recentRes.ok) {
+          console.error("Failed to fetch recent:", recentRes.status);
+          setRecentPlayed([]);
+        } else {
+          const recentData = await recentRes.json();
 
-        const normalizedRecent = Array.isArray(recentData)
-          ? recentData.map((s) => ({
+          const normalizedRecent = Array.isArray(recentData)
+            ? recentData.map((s) => ({
               videoId: s.videoId,
               title: s.title,
               channel: s.channel,
               thumbnail: s.thumbnail,
             }))
-          : [];
+            : [];
 
-        setRecentPlayed(normalizedRecent);
+          setRecentPlayed(normalizedRecent);
+        }
+
+        /* =======================
+           FETCH PLAYLISTS
+        ======================= */
+        const playlistsRes = await fetch(`${API}/api/playlists`);
+        if (!playlistsRes.ok) {
+          console.error("Failed to fetch playlists:", playlistsRes.status);
+        } else {
+          const playlistsData = await playlistsRes.json();
+          setPlaylists(playlistsData.playlists || []);
+        }
+
+      } catch (err) {
+        console.error("Initial fetch error:", err);
       }
+    };
 
-      /* =======================
-         FETCH PLAYLISTS
-      ======================= */
-      const playlistsRes = await fetch(`${API}/api/playlists`);
-      if (!playlistsRes.ok) {
-        console.error("Failed to fetch playlists:", playlistsRes.status);
-      } else {
-        const playlistsData = await playlistsRes.json();
-        setPlaylists(playlistsData.playlists || []);
-      }
-
-    } catch (err) {
-      console.error("Initial fetch error:", err);
-    }
-  };
-
-  fetchInitialData();
-}, []);
+    fetchInitialData();
+  }, []);
 
 
   // ---------------- time updates ----------------
@@ -161,7 +161,7 @@ export default function App() {
             if (recoveryAttemptsRef.current >= RECREATE_AFTER) {
               console.warn("[RECOVER] recreating player");
               const vid = currentYt?.videoId;
-              try { playerRef.current.destroy?.(); } catch {}
+              try { playerRef.current.destroy?.(); } catch { }
               playerRef.current = null;
               recoveryAttemptsRef.current = 0;
               setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
@@ -183,8 +183,8 @@ export default function App() {
   // ---------------- player handlers ----------------
   const handlePlayerReady = useCallback((event) => {
     recoveryAttemptsRef.current = 0;
-    try { event.target.mute?.(); } catch {}
-    try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch {}
+    try { event.target.mute?.(); } catch { }
+    try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch { }
     console.log("[YT] player ready");
   }, []);
 
@@ -212,7 +212,7 @@ export default function App() {
           if (shortPauseCountRef.current >= 2) {
             console.warn("[SHORT-PAUSE] threshold reached, recreating player");
             const vid = currentYt?.videoId;
-            try { playerRef.current.destroy?.(); } catch {}
+            try { playerRef.current.destroy?.(); } catch { }
             playerRef.current = null;
             shortPauseCountRef.current = 0;
             recoveryAttemptsRef.current = 0;
@@ -234,7 +234,7 @@ export default function App() {
   const createIframeAndPlayer = useCallback((videoId) => {
     if (creatingRef.current) {
       if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
-        try { playerRef.current.loadVideoById(videoId); } catch {}
+        try { playerRef.current.loadVideoById(videoId); } catch { }
       }
       console.warn("[CREATE] creation already in progress - skipping");
       return;
@@ -259,7 +259,7 @@ export default function App() {
         creatingRef.current = false;
         return;
       } catch (err) {
-        try { playerRef.current.destroy?.(); } catch {}
+        try { playerRef.current.destroy?.(); } catch { }
         playerRef.current = null;
       }
     }
@@ -363,7 +363,7 @@ export default function App() {
   useEffect(() => {
     return () => {
       stopTimeUpdates();
-      try { playerRef.current?.destroy?.(); } catch {}
+      try { playerRef.current?.destroy?.(); } catch { }
       playerRef.current = null;
       creatingRef.current = false;
       if (instantiateTimerRef.current) {
@@ -557,6 +557,14 @@ export default function App() {
 
   const progressPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
   const showHome = !loading && ytResults.length === 0 && !searchActive;
+  console.log("DEBUG render flags:", {
+    recentPlayedLen: recentPlayed.length,
+    ytResultsLen: ytResults.length,
+    searchActive,
+    loading,
+    showHome,
+  });
+
 
   // --------------- UI ----------------
   return (
@@ -577,9 +585,19 @@ export default function App() {
             <h2 className="results-title">Results</h2>
           </div>
 
+          {/* 🔹 RECENTLY PLAYED (ALWAYS DATA-DRIVEN) */}
+          {recentPlayed.length > 0 && (
+            <RecentlyPlayed
+              recentPlayed={recentPlayed}
+              onSelectSong={handleSelectSong}
+            />
+          )}
+
+
           {showHome ? (
             <div className="home-sections">
-              <RecentlyPlayed recentPlayed={recentPlayed} onSelectSong={handleSelectSong} />
+
+              {/* PLAYLISTS */}
               <Playlist
                 playlists={playlists}
                 onCreatePlaylist={handleCreatePlaylist}
