@@ -4,13 +4,7 @@ import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
-const API =
-  process.env.REACT_APP_API_URL ||
-  (typeof window !== "undefined" &&
-  (window.location.hostname === "localhost" ||
-    window.location.hostname === "127.0.0.1")
-    ? "http://localhost:5001"
-    : "");
+const API = process.env.REACT_APP_API_URL;
 
 export default function App() {
   // --- App state ---

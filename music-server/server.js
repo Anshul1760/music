@@ -7,6 +7,7 @@ const initDb = require("./initDb");
 const axios = require("axios");
 const pool = require("./db"); // MySQL connection file (must read envs inside)
 const playlistRoutes = require("./routes/playlistRoutes"); // router for playlists
+const recentRoutes = require("./routes/recently");
 
 const app = express();
 
@@ -26,7 +27,7 @@ if (typeof process.env.ALLOWED_ORIGINS === "string" && process.env.ALLOWED_ORIGI
   allowedOrigins = process.env.ALLOWED_ORIGINS;
 } else {
   allowedOrigins = [
-    "https://music123-three.vercel.app/",
+    "https://music123-three.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
   ];
@@ -153,50 +154,52 @@ app.get("/api/youtube/search", async (req, res) => {
 /* =========================================================
                      MYSQL  — RECENTLY PLAYED
 ========================================================= */
-app.get("/api/recent", async (req, res) => {
-  try {
-    const [rows] = await pool.query(
-      "SELECT videoId, title, channel, thumbnail FROM recent_played ORDER BY played_at DESC LIMIT 10"
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("Recent fetch failed:", err);
-    res.status(500).json({ error: "Recent fetch failed" });
-  }
-});
+// app.get("/api/recent", async (req, res) => {
+//   try {
+//     const [rows] = await pool.query(
+//       "SELECT videoId, title, channel, thumbnail FROM recent_played ORDER BY played_at DESC LIMIT 10"
+//     );
+//     res.json(rows);
+//   } catch (err) {
+//     console.error("Recent fetch failed:", err);
+//     res.status(500).json({ error: "Recent fetch failed" });
+//   }
+// });
 
-app.post("/api/recent", async (req, res) => {
-  const { videoId, title, channel, thumbnail } = req.body;
-  if (!videoId || !title) return res.status(400).json({ error: "Missing data" });
+// app.post("/api/recent", async (req, res) => {
+//   const { videoId, title, channel, thumbnail } = req.body;
+//   if (!videoId || !title) return res.status(400).json({ error: "Missing data" });
 
-  try {
-    await pool.query(
-      `INSERT INTO recent_played (videoId,title,channel,thumbnail)
-       VALUES (?,?,?,?)
-       ON DUPLICATE KEY UPDATE played_at=CURRENT_TIMESTAMP`,
-      [videoId, title, channel || "", thumbnail || ""]
-    );
+  // try {
+  //   await pool.query(
+  //     `INSERT INTO recent_played (videoId,title,channel,thumbnail)
+  //      VALUES (?,?,?,?)
+  //      ON DUPLICATE KEY UPDATE played_at=CURRENT_TIMESTAMP`,
+  //     [videoId, title, channel || "", thumbnail || ""]
+  //   );
 
-    await pool.query(
-      `DELETE FROM recent_played 
-       WHERE id NOT IN(
-         SELECT id FROM(
-           SELECT id FROM recent_played ORDER BY played_at DESC LIMIT 20
-         ) as t
-       )`
-    );
+  //   await pool.query(
+  //     `DELETE FROM recent_played 
+  //      WHERE id NOT IN(
+  //        SELECT id FROM(
+  //          SELECT id FROM recent_played ORDER BY played_at DESC LIMIT 20
+  //        ) as t
+  //      )`
+  //   );
 
-    res.json({ success: true });
-  } catch (err) {
-    console.error("Recent save failed:", err);
-    res.status(500).json({ error: "Recent save failed" });
-  }
-});
+//     res.json({ success: true });
+//   } catch (err) {
+//     console.error("Recent save failed:", err);
+//     res.status(500).json({ error: "Recent save failed" });
+//   }
+// });
 
 /* =========================================================
                      MYSQL  — PLAYLISTS (via router)
 ========================================================= */
 app.use("/api/playlists", playlistRoutes);
+app.use("/api/recent", recentRoutes);
+
 
 /* =========================================================
                       LIKE / UNLIKE SYSTEM
