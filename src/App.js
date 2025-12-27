@@ -4,7 +4,13 @@ import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
-const API = process.env.REACT_APP_API_URL || "";
+const API =
+  process.env.REACT_APP_API_URL ||
+  (typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1")
+    ? "http://localhost:5001"
+    : "");
 
 export default function App() {
   // --- App state ---
@@ -16,13 +22,14 @@ export default function App() {
   // --- Player refs / state ---
   const [playerApiReady, setPlayerApiReady] = useState(false);
   const playerRef = useRef(null);
-  const creatingRef = useRef(false);
+  const creatingRef = useRef(false); 
+  const instantiateTimerRef = useRef(null); 
+  const iframeIdRef = useRef(null); 
 
   // recovery counters
   const recoveryAttemptsRef = useRef(0);
   const shortPauseCountRef = useRef(0);
   const playStartTimestampRef = useRef(0);
-  const forceResumeRef = useRef(0);
 
   // user-driven playback
   const [userStartedPlayback, setUserStartedPlayback] = useState(false);
@@ -33,11 +40,12 @@ export default function App() {
   const [duration, setDuration] = useState(0);
   const timeIntervalRef = useRef(null);
   const trackBarRef = useRef(null);
+
+  // app lists
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
-  const [, setHistory] = useState([]);
-
   const [playlists, setPlaylists] = useState([]);
+  const [, setHistory] = useState([]);
 
   // ---------------- YT API loader ----------------
   useEffect(() => {
@@ -50,46 +58,30 @@ export default function App() {
     tag.async = true;
     document.body.appendChild(tag);
     window.onYouTubeIframeAPIReady = () => {
+      console.log("[YT] API ready");
       setPlayerApiReady(true);
     };
   }, []);
 
   // ---------------- initial data ----------------
   useEffect(() => {
-    const fetchRecent = async () => {
+    const fetchInitialData = async () => {
       try {
-        const res = await fetch(`${API}/api/recent`);
-        if (!res.ok) {
-          setRecentPlayed([]);
-          return;
+        const [recentRes, playlistsRes] = await Promise.all([
+          fetch(`${API}/api/recent`),
+          fetch(`${API}/api/playlists`),
+        ]);
+        const recentData = await recentRes.json();
+        const playlistsData = await playlistsRes.json();
+        setRecentPlayed(Array.isArray(recentData) ? recentData : []);
+        if (playlistsData.playlists) {
+          setPlaylists(playlistsData.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
         }
-        const data = await res.json();
-        const normalized = Array.isArray(data)
-          ? data.map((s) => ({
-              videoId: s.videoId,
-              title: s.title,
-              channel: s.channel,
-              thumbnail: s.thumbnail,
-            }))
-          : [];
-        setRecentPlayed(normalized);
       } catch (err) {
-        setRecentPlayed([]);
+        console.error("Error loading initial data:", err);
       }
     };
-
-    const fetchPlaylists = async () => {
-      try {
-        const res = await fetch(`${API}/api/playlists`);
-        const data = await res.json();
-        if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    fetchRecent();
-    fetchPlaylists();
+    fetchInitialData();
   }, []);
 
   // ---------------- time updates ----------------
@@ -112,157 +104,179 @@ export default function App() {
     }, 500);
   }, [stopTimeUpdates]);
 
-  // ---------------- Player Logic ----------------
+  // ---------------- Handlers (Moved up to fix dependencies) ----------------
   
+  const handlePlayerReady = useCallback((event) => {
+    recoveryAttemptsRef.current = 0;
+    try { event.target.mute?.(); } catch {}
+    try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch {}
+    console.log("[YT] player ready");
+  }, []);
+
+  // Forward declaration for createIframeAndPlayer to be used in tryRecoverPlayback
   const createIframeAndPlayer = useCallback((videoId) => {
-    const handlePlayerReady = (event) => {
-      recoveryAttemptsRef.current = 0;
-      try { event.target.mute?.(); } catch { }
-      try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch { }
-    };
-
-    const tryRecoverPlaybackLocal = () => {
-      if (!userStartedPlayback || !playerRef.current || !window.YT) return;
-      if (recoveryAttemptsRef.current >= 4) return;
-
-      recoveryAttemptsRef.current += 1;
-      const delay = 300 * recoveryAttemptsRef.current;
-
-      setTimeout(() => {
-        try { playerRef.current.playVideo?.(); } catch {}
-        setTimeout(() => {
-          try {
-            const state = playerRef.current.getPlayerState?.();
-            if (state !== window.YT.PlayerState.PLAYING) {
-              if (recoveryAttemptsRef.current >= 3) {
-                const vid = currentYt?.videoId;
-                try { playerRef.current.destroy?.(); } catch {}
-                playerRef.current = null;
-                recoveryAttemptsRef.current = 0;
-                if (vid) createIframeAndPlayer(vid);
-              } else {
-                tryRecoverPlaybackLocal();
-              }
-            } else {
-              recoveryAttemptsRef.current = 0;
-            }
-          } catch {}
-        }, 450);
-      }, delay);
-    };
-
-    const handlePlayerStateChange = (event) => {
-      const YT = window.YT;
-      if (!YT) return;
-      
-      if (event.data === YT.PlayerState.PLAYING) {
-        setIsPlaying(true);
-        startTimeUpdates();
-        recoveryAttemptsRef.current = 0;
-        forceResumeRef.current = 0; // Reset anti-stutter
-        playStartTimestampRef.current = Date.now();
-        shortPauseCountRef.current = 0;
-      } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-        setIsPlaying(false);
-        if (event.data === YT.PlayerState.ENDED && duration) setCurrentTime(duration);
-        stopTimeUpdates();
-
-        // ANTI-STUTTER LOGIC: If it pauses within 1.5 seconds of starting
-        const timeSinceStart = Date.now() - playStartTimestampRef.current;
-        if (userStartedPlayback && timeSinceStart < 1500 && forceResumeRef.current < 3) {
-            forceResumeRef.current += 1;
-            console.warn("Detected AdBlock stutter. Force-resuming...");
-            setTimeout(() => {
-                try { playerRef.current.playVideo?.(); } catch(e) {}
-            }, 100);
-            return;
-        }
-
-        try {
-          const t = playerRef.current.getCurrentTime?.() || 0;
-          const sincePlay = Date.now() - (playStartTimestampRef.current || 0);
-          if (userStartedPlayback && sincePlay < 4000 && t < 2) {
-            shortPauseCountRef.current += 1;
-            if (shortPauseCountRef.current >= 2) {
-              const vid = currentYt?.videoId;
-              try { playerRef.current.destroy?.(); } catch { }
-              playerRef.current = null;
-              shortPauseCountRef.current = 0;
-              recoveryAttemptsRef.current = 0;
-              setTimeout(() => { 
-                if (vid) createIframeAndPlayer(vid); 
-                setTimeout(() => { tryRecoverPlaybackLocal(); }, 600); 
-              }, 200);
-            } else {
-              tryRecoverPlaybackLocal();
-            }
-          }
-        } catch {}
+    if (creatingRef.current) {
+      if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
+        try { playerRef.current.loadVideoById(videoId); } catch {}
       }
-    };
+      return;
+    }
 
-    if (creatingRef.current) return;
     creatingRef.current = true;
-    
-    const container = document.getElementById("yt-player-iframe");
-    if (!container) { creatingRef.current = false; return; }
+    if (instantiateTimerRef.current) {
+      clearTimeout(instantiateTimerRef.current);
+    }
 
-    if (playerRef.current?.loadVideoById) {
+    const container = document.getElementById("yt-player-iframe");
+    if (!container) {
+      creatingRef.current = false;
+      return;
+    }
+
+    if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
       try {
         playerRef.current.loadVideoById(videoId);
         creatingRef.current = false;
         return;
-      } catch {
-        playerRef.current.destroy?.();
+      } catch (err) {
+        try { playerRef.current.destroy?.(); } catch {}
         playerRef.current = null;
       }
     }
 
     container.innerHTML = "";
     const instanceId = `yt-player-el-${Date.now()}`;
+    iframeIdRef.current = instanceId;
     const wrapper = document.createElement("div");
     wrapper.id = instanceId;
+    wrapper.style.width = "100%";
+    wrapper.style.height = "100%";
     container.appendChild(wrapper);
 
     requestAnimationFrame(() => {
       try {
         playerRef.current = new window.YT.Player(instanceId, {
           videoId,
-          height: "160", width: "320",
-          playerVars: { 
-            autoplay: 0, 
-            controls: 0, 
-            rel: 0, 
-            playsinline: 1, 
+          height: "160",
+          width: "320",
+          playerVars: {
+            autoplay: 0,
+            controls: 0,
+            rel: 0,
+            playsinline: 1,
             origin: window.location.origin,
-            enablejsapi: 1
           },
           events: {
             onReady: handlePlayerReady,
             onStateChange: handlePlayerStateChange,
-            onError: () => tryRecoverPlaybackLocal(),
+            onError: (e) => {
+              console.error("[YT] onError", e && e.data);
+              tryRecoverPlayback();
+            },
           },
         });
       } catch (err) {
-        console.error("Player creation error:", err);
+        console.error("[CREATE] failed:", err);
       } finally {
         creatingRef.current = false;
       }
     });
-  }, [currentYt, userStartedPlayback, duration, startTimeUpdates, stopTimeUpdates]);
+
+    instantiateTimerRef.current = setTimeout(() => {
+      if (!playerRef.current) {
+        try {
+          playerRef.current = new window.YT.Player(instanceId, {
+            videoId,
+            height: "160",
+            width: "320",
+            playerVars: { autoplay: 0, controls: 0, rel: 0, playsinline: 1, origin: window.location.origin },
+            events: {
+              onReady: handlePlayerReady,
+              onStateChange: handlePlayerStateChange,
+              onError: () => tryRecoverPlayback(),
+            },
+          });
+        } catch (err) {
+          console.error("[CREATE] fallback failed:", err);
+        } finally {
+          creatingRef.current = false;
+        }
+      }
+    }, 900);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [handlePlayerReady]); 
 
   const tryRecoverPlayback = useCallback(() => {
     if (!userStartedPlayback || !playerRef.current || !window.YT) return;
-    const delay = 300;
+
+    const MAX = 4;
+    const RECREATE_AFTER = 3;
+    if (recoveryAttemptsRef.current >= MAX) return;
+
+    recoveryAttemptsRef.current += 1;
+    const delay = 300 * recoveryAttemptsRef.current;
+
     setTimeout(() => {
-      try { playerRef.current.playVideo?.(); } catch {
-        const vid = currentYt?.videoId;
-        if (vid) createIframeAndPlayer(vid);
-      }
+      try { playerRef.current.playVideo?.(); } catch {}
+
+      setTimeout(() => {
+        try {
+          const state = playerRef.current.getPlayerState?.();
+          if (state !== window.YT.PlayerState.PLAYING) {
+            if (recoveryAttemptsRef.current >= RECREATE_AFTER) {
+              const vid = currentYt?.videoId;
+              try { playerRef.current.destroy?.(); } catch {}
+              playerRef.current = null;
+              recoveryAttemptsRef.current = 0;
+              setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
+            } else {
+              tryRecoverPlayback();
+            }
+          }
+        } catch {}
+      }, 450);
     }, delay);
   }, [userStartedPlayback, currentYt, createIframeAndPlayer]);
 
-  // ---------------- Effects ----------------
+  const handlePlayerStateChange = useCallback((event) => {
+    const YT = window.YT;
+    if (!YT) return;
+
+    if (event.data === YT.PlayerState.PLAYING) {
+      setIsPlaying(true);
+      startTimeUpdates();
+      recoveryAttemptsRef.current = 0;
+      playStartTimestampRef.current = Date.now();
+      shortPauseCountRef.current = 0;
+    } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+      setIsPlaying(false);
+      if (event.data === YT.PlayerState.ENDED && duration) setCurrentTime(duration);
+      stopTimeUpdates();
+
+      try {
+        const t = playerRef.current.getCurrentTime?.() || 0;
+        const sincePlay = Date.now() - (playStartTimestampRef.current || 0);
+        if (userStartedPlayback && sincePlay < 4000 && t < 2) {
+          shortPauseCountRef.current += 1;
+          if (shortPauseCountRef.current >= 2) {
+            const vid = currentYt?.videoId;
+            try { playerRef.current.destroy?.(); } catch {}
+            playerRef.current = null;
+            shortPauseCountRef.current = 0;
+            recoveryAttemptsRef.current = 0;
+            setTimeout(() => { 
+                if (vid) createIframeAndPlayer(vid); 
+                setTimeout(() => { tryRecoverPlayback(); }, 600); 
+            }, 200);
+          } else {
+            tryRecoverPlayback();
+          }
+        }
+      } catch (e) {}
+    }
+  }, [duration, startTimeUpdates, stopTimeUpdates, tryRecoverPlayback, userStartedPlayback, currentYt, createIframeAndPlayer]);
+
+  // ---------------- lifecycle ----------------
   useEffect(() => {
     if (!playerApiReady || !currentYt) return;
     setIsPlaying(false);
@@ -277,11 +291,11 @@ export default function App() {
   useEffect(() => {
     return () => {
       stopTimeUpdates();
-      try { if (playerRef.current) playerRef.current.destroy?.(); } catch (e) { }
+      try { playerRef.current?.destroy?.(); } catch {}
     };
   }, [stopTimeUpdates]);
 
-  // ---------------- Handlers ----------------
+  // ---------------- app handlers ----------------
   const handleUserStartPlayback = useCallback(() => {
     if (!playerRef.current) return;
     try {
@@ -313,17 +327,19 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name })
       });
       const data = await res.json();
+      if (data.error) return;
       setPlaylists((prev) => [...prev, { ...data, id: data.id.toString() }]);
-    } catch (err) { console.error(err); }
+    } catch (err) {}
   }, []);
 
   const handleRenamePlaylist = useCallback(async (id, newName) => {
     try {
-      await fetch(`${API}/api/playlists/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
-      const res = await fetch(`${API}/api/playlists`);
-      const data = await res.json();
-      if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-    } catch (err) { console.error(err); }
+      const res = await fetch(`${API}/api/playlists/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
+      if (!res.ok) return;
+      const res2 = await fetch(`${API}/api/playlists`);
+      const data2 = await res2.json();
+      if (data2.playlists) setPlaylists(data2.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
+    } catch (err) {}
   }, []);
 
   const handleAddSongToPlaylist = useCallback(async (playlistId, song) => {
@@ -332,7 +348,7 @@ export default function App() {
       const res = await fetch(`${API}/api/playlists`);
       const data = await res.json();
       if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-    } catch (err) { console.error(err); }
+    } catch (err) {}
   }, []);
 
   const handleRemoveSongFromPlaylist = useCallback(async (playlistId, videoId) => {
@@ -341,16 +357,17 @@ export default function App() {
       const res = await fetch(`${API}/api/playlists`);
       const data = await res.json();
       if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-    } catch (err) { console.error(err); }
+    } catch (err) {}
   }, []);
 
   const handleDeletePlaylist = useCallback(async (playlistId) => {
     try {
-      await fetch(`${API}/api/playlists/${playlistId}`, { method: "DELETE" });
-      const res = await fetch(`${API}/api/playlists`);
-      const data = await res.json();
-      if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-    } catch (err) { console.error(err); }
+      const res = await fetch(`${API}/api/playlists/${playlistId}`, { method: "DELETE" });
+      if (!res.ok) return;
+      const res2 = await fetch(`${API}/api/playlists`);
+      const data2 = await res2.json();
+      if (data2.playlists) setPlaylists(data2.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
+    } catch (err) {}
   }, []);
 
   const handleToggleLike = useCallback(async () => {
@@ -360,11 +377,8 @@ export default function App() {
       const plRes = await fetch(`${API}/api/playlists`);
       const plData = await plRes.json();
       if (plData.playlists) setPlaylists(plData.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
-    } catch (err) { console.error(err); }
+    } catch (err) {}
   }, [currentYt]);
-
-  const likedPlaylist = playlists.find((pl) => pl.isDefault);
-  const isCurrentLiked = !!currentYt && !!likedPlaylist && likedPlaylist.songs.some((s) => s.videoId === currentYt.videoId);
 
   const handleSearch = useCallback(async (e) => {
     e.preventDefault();
@@ -375,9 +389,8 @@ export default function App() {
     try {
       const res = await fetch(`${API}/api/youtube/search?query=${encodeURIComponent(query)}`);
       const data = await res.json();
-      setYtResults(data.results || []);
+      if (data.results) setYtResults(data.results);
     } catch (err) {
-      alert("Error searching.");
     } finally {
       setLoading(false);
     }
@@ -396,16 +409,15 @@ export default function App() {
   }, []);
 
   const handleTogglePlay = useCallback(() => {
-    if (!playerRef.current?.getPlayerState) return;
-    const state = playerRef.current.getPlayerState();
-    const YT = window.YT;
-    if (state === YT.PlayerState.PLAYING) {
-      playerRef.current.pauseVideo();
+    if (!playerRef.current || !window.YT) return;
+    const state = playerRef.current.getPlayerState?.();
+    if (state === window.YT.PlayerState.PLAYING) {
+      playerRef.current.pauseVideo?.();
     } else {
       if (!userStartedPlayback) {
         handleUserStartPlayback();
       } else {
-        playerRef.current.playVideo();
+        playerRef.current.playVideo?.();
       }
     }
   }, [userStartedPlayback, handleUserStartPlayback]);
@@ -414,7 +426,7 @@ export default function App() {
     if (!playerRef.current) return;
     const ct = playerRef.current.getCurrentTime?.() || currentTime;
     const newTime = Math.max(0, ct - 10);
-    playerRef.current.seekTo(newTime, true);
+    playerRef.current.seekTo?.(newTime, true);
     setCurrentTime(newTime);
   }, [currentTime]);
 
@@ -423,7 +435,7 @@ export default function App() {
     const dur = duration || (playerRef.current.getDuration?.() || 0);
     const ct = playerRef.current.getCurrentTime?.() || currentTime;
     const newTime = Math.min(dur, ct + 10);
-    playerRef.current.seekTo(newTime, true);
+    playerRef.current.seekTo?.(newTime, true);
     setCurrentTime(newTime);
   }, [currentTime, duration]);
 
@@ -433,7 +445,7 @@ export default function App() {
     const clickX = e.clientX - rect.left;
     const percent = Math.min(Math.max(clickX / rect.width, 0), 1);
     const newTime = percent * duration;
-    playerRef.current.seekTo(newTime, true);
+    playerRef.current.seekTo?.(newTime, true);
     setCurrentTime(newTime);
   }, [duration]);
 
@@ -445,6 +457,8 @@ export default function App() {
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }, []);
 
+  const likedPlaylist = playlists.find((pl) => pl.isDefault);
+  const isCurrentLiked = !!currentYt && !!likedPlaylist && likedPlaylist.songs.some((s) => s.videoId === currentYt.videoId);
   const progressPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
   const showHome = !loading && ytResults.length === 0 && !searchActive;
 
@@ -455,22 +469,16 @@ export default function App() {
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search songs..." />
         <button className="search-button" type="submit">Search</button>
       </form>
-
       {loading && <p className="status-text">Searching...</p>}
-
       <div className="layout">
         <div className="card">
           <div className="results-header">
             {searchActive && <button type="button" className="back-button" onClick={handleBackFromSearch}>🔙</button>}
             <h2 className="results-title">Results</h2>
           </div>
-
-          {recentPlayed.length > 0 && (
-            <RecentlyPlayed recentPlayed={recentPlayed} onSelectSong={handleSelectSong} />
-          )}
-
           {showHome ? (
             <div className="home-sections">
+              <RecentlyPlayed recentPlayed={recentPlayed} onSelectSong={handleSelectSong} />
               <Playlist
                 playlists={playlists}
                 onCreatePlaylist={handleCreatePlaylist}
@@ -496,7 +504,6 @@ export default function App() {
             </div>
           )}
         </div>
-
         <div className="card">
           <h2>Now Playing</h2>
           {currentYt ? (
@@ -504,16 +511,14 @@ export default function App() {
               <div className="now-title">{currentYt.title}</div>
               <div className="now-meta">{currentYt.channel}</div>
               <div className={`vibe vibe-large ${isPlaying ? "playing" : ""}`}>
-                {[...Array(5)].map((_, i) => <span key={i} className="vibe-bar" />)}
+                <span className="vibe-bar" /><span className="vibe-bar" /><span className="vibe-bar" /><span className="vibe-bar" /><span className="vibe-bar" />
               </div>
               <div className="yt-player-wrapper" style={{ height: 1, width: 1, overflow: "hidden", position: "absolute", left: -9999 }}>
-                <div id="yt-player-iframe" className="yt-player" />
+                <div id="yt-player-iframe" className="yt-player" style={{ width: "100%", height: "100%" }} />
               </div>
               <div className="track-container">
                 <div className="track-time"><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
-                <div className="track-bar" ref={trackBarRef} onClick={handleTrackClick}>
-                  <div className="track-bar-inner" style={{ width: `${progressPercent}%` }} />
-                </div>
+                <div className="track-bar" ref={trackBarRef} onClick={handleTrackClick}><div className="track-bar-inner" style={{ width: `${progressPercent}%` }} /></div>
               </div>
               <div className="controls">
                 <button onClick={handleSkipBackward}>↩️</button>
