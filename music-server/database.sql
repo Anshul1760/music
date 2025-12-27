@@ -1,4 +1,3 @@
-
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100),
@@ -47,5 +46,3 @@ CREATE TABLE IF NOT EXISTS recent_played (
   UNIQUE KEY uniq_recent_user_song (user_id, videoId)
 );
 
-INSERT INTO playlists (user_id, name, is_default)
-VALUES (1, 'Liked Songs', 1);
