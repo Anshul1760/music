@@ -380,7 +380,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <h1 className="title">🎶 My Premium Music 🎵</h1>
+      <h1 className="title">🎶 Cloud Beats 🎵</h1>
       
       <form className="search-form" onSubmit={handleSearch}>
         <input 
