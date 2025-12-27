@@ -4,8 +4,8 @@ import RecentlyPlayed from "./RecentlyPlayed";
 import Playlist from "./Playlist";
 
 /**
- * --- GLOBAL CONFIGURATION ---
- * Dynamically resolves the API endpoint for development and production.
+ * --- CONFIGURATION ---
+ * Dynamically resolves the backend API endpoint.
  */
 const API =
   process.env.REACT_APP_API_URL ||
@@ -16,7 +16,7 @@ const API =
     : `http://${window.location.hostname}:5001`);
 
 export default function App() {
-  // --- Core Application State ---
+  // --- UI & Application State ---
   const [query, setQuery] = useState("");
   const [ytResults, setYtResults] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -33,11 +33,11 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // --- Library & Playlist State ---
+  // --- Lists & Library State ---
   const [recentPlayed, setRecentPlayed] = useState([]);
   const [playlists, setPlaylists] = useState([]);
 
-  // --- Ref Store (Prevents closure staleness in background tasks) ---
+  // --- Logic & Background Refs ---
   const playerRef = useRef(null);
   const creatingRef = useRef(false);
   const isPlayingRef = useRef(false);
@@ -45,9 +45,22 @@ export default function App() {
   const timeIntervalRef = useRef(null);
   const trackBarRef = useRef(null);
   const recoveryAttemptsRef = useRef(0);
+  
+  /**
+   * SILENT AUDIO BRIDGE
+   * This is the "Secret Sauce" for Android.
+   * By playing a silent audio loop, the browser keeps the tab active 
+   * even when the video is hidden.
+   */
+  const silentAudioRef = useRef(null);
+
+  // Sync ref with state for event listeners
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   // ---------------------------------------------------------
-  // 1. UTILITIES & LOGGING
+  // 1. CORE UTILITIES
   // ---------------------------------------------------------
 
   const logger = useCallback((msg, type = "info") => {
@@ -62,48 +75,49 @@ export default function App() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
+  // ---------------------------------------------------------
+  // 2. BACKGROUND PERSISTENCE LOGIC
+  // ---------------------------------------------------------
 
-  // ---------------------------------------------------------
-  // 2. WAKE LOCK & BACKGROUND PERSISTENCE
-  // ---------------------------------------------------------
+  const startSilentAudio = useCallback(() => {
+    if (!silentAudioRef.current) {
+      // 1-second silent WAV base64
+      const silentSrc = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAP8A/wD/";
+      silentAudioRef.current = new Audio(silentSrc);
+      silentAudioRef.current.loop = true;
+    }
+    silentAudioRef.current.play().catch(() => {
+      logger("Silent audio failed - requires user gesture.", "warn");
+    });
+  }, [logger]);
+
+  const stopSilentAudio = useCallback(() => {
+    if (silentAudioRef.current) {
+      silentAudioRef.current.pause();
+    }
+  }, []);
 
   const requestWakeLock = useCallback(async () => {
     if (!("wakeLock" in navigator)) return;
     try {
       if (document.visibilityState === "visible") {
         wakeLockRef.current = await navigator.wakeLock.request("screen");
-        logger("WakeLock acquired successfully.");
+        logger("WakeLock Acquired.");
       }
     } catch (err) {
-      logger(`WakeLock Request Failed: ${err.message}`, "warn");
+      logger(`WakeLock Error: ${err.message}`, "warn");
     }
   }, [logger]);
 
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        if (playerRef.current && isPlayingRef.current) {
-          playerRef.current.playVideo?.();
-          setTimeout(() => {
-            if (isPlayingRef.current) playerRef.current?.playVideo?.();
-          }, 150);
-        }
-      } else {
-        if (isPlayingRef.current) {
-          requestWakeLock();
-        }
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
-  }, [requestWakeLock]);
+  const stopTimeUpdates = useCallback(() => {
+    if (timeIntervalRef.current) {
+      clearInterval(timeIntervalRef.current);
+      timeIntervalRef.current = null;
+    }
+  }, []);
 
   // ---------------------------------------------------------
-  // 3. PLAYBACK ENGINE CONTROLS
+  // 3. PLAYBACK CONTROLS
   // ---------------------------------------------------------
 
   const handleTogglePlay = useCallback(() => {
@@ -111,12 +125,14 @@ export default function App() {
     const state = playerRef.current.getPlayerState?.();
     if (state === window.YT.PlayerState.PLAYING) {
       playerRef.current.pauseVideo();
+      stopSilentAudio();
     } else {
       playerRef.current.unMute();
       playerRef.current.playVideo();
+      startSilentAudio();
       requestWakeLock();
     }
-  }, [requestWakeLock]);
+  }, [requestWakeLock, startSilentAudio, stopSilentAudio]);
 
   const handleSkipBackward = useCallback(() => {
     if (!playerRef.current) return;
@@ -139,7 +155,7 @@ export default function App() {
   }, [duration]);
 
   // ---------------------------------------------------------
-  // 4. MEDIA SESSION (Lock Screen Controls)
+  // 4. MEDIA SESSION (Android Lock Screen)
   // ---------------------------------------------------------
 
   const setupMediaSession = useCallback((song) => {
@@ -147,7 +163,7 @@ export default function App() {
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: song.title,
         artist: song.channel,
-        album: "Cloud Beats",
+        album: "My Music Stream",
         artwork: [
           { src: song.thumbnail, sizes: "96x96", type: "image/png" },
           { src: song.thumbnail, sizes: "256x256", type: "image/png" },
@@ -159,23 +175,25 @@ export default function App() {
       navigator.mediaSession.setActionHandler("pause", handleTogglePlay);
       navigator.mediaSession.setActionHandler("seekbackward", handleSkipBackward);
       navigator.mediaSession.setActionHandler("seekforward", handleSkipForward);
+      
+      logger("Media Session configured.");
     }
-  }, [handleTogglePlay, handleSkipBackward, handleSkipForward]);
+  }, [handleTogglePlay, handleSkipBackward, handleSkipForward, logger]);
 
   // ---------------------------------------------------------
-  // 5. DATA PERSISTENCE & FETCHING
+  // 5. DATA SYNC & API CALLS
   // ---------------------------------------------------------
 
   const fetchPlaylists = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/playlists`);
-      if (!res.ok) throw new Error("Backend Offline");
+      if (!res.ok) throw new Error("Backend connection failed");
       const data = await res.json();
       if (data.playlists) {
         setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
       }
     } catch (err) {
-      logger(`Playlist Sync Error: ${err.message}`, "error");
+      logger(`Playlist Sync: ${err.message}`, "error");
     }
   }, [logger]);
 
@@ -196,33 +214,36 @@ export default function App() {
     });
   }, []);
 
+  const handleToggleLike = async () => {
+    if (!currentYt) return;
+    try {
+      await fetch(`${API}/api/liked/toggle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentYt)
+      });
+      fetchPlaylists();
+    } catch (err) {}
+  };
+
   useEffect(() => {
-    const initApp = async () => {
+    const initData = async () => {
       try {
         const recentRes = await fetch(`${API}/api/recent`);
         const recentData = await recentRes.json();
         setRecentPlayed(Array.isArray(recentData) ? recentData : []);
         await fetchPlaylists();
-      } catch (err) {
-        logger("Initial Handshake Failed", "error");
-      }
+      } catch (err) {}
     };
-    initApp();
-  }, [fetchPlaylists, logger]);
+    initData();
+  }, [fetchPlaylists]);
 
   // ---------------------------------------------------------
-  // 6. YOUTUBE PLAYER INTEGRATION
+  // 6. YOUTUBE ENGINE & VISIBILITY
   // ---------------------------------------------------------
-
-  const stopTimeUpdates = useCallback(() => {
-    if (timeIntervalRef.current) {
-      clearInterval(timeIntervalRef.current);
-      timeIntervalRef.current = null;
-    }
-  }, []);
 
   const startTimeUpdates = useCallback(() => {
-    stopTimeUpdates(); // Properly clearing before starting new interval
+    stopTimeUpdates();
     timeIntervalRef.current = setInterval(() => {
       if (playerRef.current?.getPlayerState) {
         const state = playerRef.current.getPlayerState();
@@ -232,7 +253,7 @@ export default function App() {
           const dur = playerRef.current.getDuration() || 0;
           setCurrentTime(ct);
           setDuration(dur);
-
+          
           if ("mediaSession" in navigator && "setPositionState" in navigator.mediaSession) {
             navigator.mediaSession.setPositionState({
               duration: dur,
@@ -240,12 +261,12 @@ export default function App() {
               position: ct,
             });
           }
-        } else if (state === 3) { // Buffering
+        } else if (state === 3) {
           setIsBuffering(true);
         }
       }
     }, 1000);
-  }, [stopTimeUpdates]); // Dependency included to fix ESLint warning
+  }, [stopTimeUpdates]);
 
   const handlePlayerReady = useCallback((event) => {
     recoveryAttemptsRef.current = 0;
@@ -267,33 +288,29 @@ export default function App() {
       return;
     }
 
-    container.innerHTML = "";
-    const instanceId = `yt-player-el-${Date.now()}`;
-    const wrapper = document.createElement("div");
-    wrapper.id = instanceId;
-    container.appendChild(wrapper);
-
-    playerRef.current = new window.YT.Player(instanceId, {
+    container.innerHTML = '<div id="yt-instance"></div>';
+    playerRef.current = new window.YT.Player("yt-instance", {
       videoId,
-      height: "240", width: "100%",
+      height: "200", width: "100%",
       playerVars: { 
         autoplay: 1, 
         controls: 0, 
         playsinline: 1, 
         enablejsapi: 1,
-        rel: 0,
-        modestbranding: 1 
+        rel: 0 
       },
       events: {
         onReady: handlePlayerReady,
         onStateChange: (e) => {
           const state = e.data;
-          const YT_STATE = window.YT.PlayerState;
-          if (state === YT_STATE.PLAYING) {
+          const YT_S = window.YT.PlayerState;
+          if (state === YT_S.PLAYING) {
             setIsPlaying(true); setIsBuffering(false); startTimeUpdates();
             requestWakeLock();
-          } else if (state === YT_STATE.PAUSED || state === YT_STATE.ENDED) {
+            startSilentAudio();
+          } else if (state === YT_S.PAUSED || state === YT_S.ENDED) {
             setIsPlaying(false); stopTimeUpdates();
+            stopSilentAudio();
           }
         },
         onError: () => {
@@ -305,7 +322,25 @@ export default function App() {
       },
     });
     creatingRef.current = false;
-  }, [handlePlayerReady, startTimeUpdates, stopTimeUpdates, requestWakeLock]);
+  }, [handlePlayerReady, startTimeUpdates, stopTimeUpdates, requestWakeLock, startSilentAudio, stopSilentAudio]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        if (playerRef.current && isPlayingRef.current) {
+          // Double-tap resume for Android Chrome
+          playerRef.current.playVideo?.();
+          setTimeout(() => {
+            if (isPlayingRef.current) playerRef.current?.playVideo?.();
+          }, 200);
+        }
+      } else if (isPlayingRef.current) {
+        requestWakeLock();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [requestWakeLock]);
 
   useEffect(() => {
     if (playerApiReady && currentYt) {
@@ -321,13 +356,12 @@ export default function App() {
     }
     const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
-    tag.async = true;
     document.body.appendChild(tag);
     window.onYouTubeIframeAPIReady = () => setPlayerApiReady(true);
   }, []);
 
   // ---------------------------------------------------------
-  // 7. PLAYLIST & LIKE ACTIONS
+  // 7. UI HANDLERS
   // ---------------------------------------------------------
 
   const handleSearch = async (e) => {
@@ -338,59 +372,35 @@ export default function App() {
       const res = await fetch(`${API}/api/youtube/search?query=${encodeURIComponent(query)}`);
       const data = await res.json();
       if (data.results) setYtResults(data.results);
-    } catch (err) {
-      logger("Search Operation Failed", "error");
-    } finally { setLoading(false); }
+    } catch (err) {} finally { setLoading(false); }
   };
-
-  const handleToggleLike = async () => {
-    if (!currentYt) return;
-    try {
-      await fetch(`${API}/api/liked/toggle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(currentYt)
-      });
-      fetchPlaylists();
-    } catch (err) {}
-  };
-
-  // ---------------------------------------------------------
-  // 8. FINAL RENDER
-  // ---------------------------------------------------------
 
   const isCurrentLiked = playlists.find(p => p.isDefault)?.songs.some(s => s.videoId === currentYt?.videoId);
   const showHome = !loading && ytResults.length === 0 && !searchActive;
 
   return (
     <div className="app">
-      <h1 className="title">🎶 Cloud Beats 🎵</h1>
+      <h1 className="title">🎶 My Premium Music 🎵</h1>
       
       <form className="search-form" onSubmit={handleSearch}>
         <input 
           className="search-input" 
           value={query} 
           onChange={(e) => setQuery(e.target.value)} 
-          placeholder="Search songs or artists..." 
+          placeholder="Search songs..." 
         />
         <button className="search-button" type="submit">Search</button>
       </form>
 
-      {loading && <p className="status-text pulse">Loading tracks from the cloud...</p>}
+      {loading && <p className="status-text pulse">Loading tracks...</p>}
 
       <div className={`layout ${!currentYt ? "layout-full" : ""}`}>
-        <div className="card library-card">
+        <div className="card scroll-pane">
           <div className="results-header">
             {searchActive && (
-              <button 
-                type="button" 
-                className="back-button" 
-                onClick={() => {setSearchActive(false); setYtResults([]);}}
-              >
-                🔙 Back
-              </button>
+              <button className="back-button" onClick={() => {setSearchActive(false); setYtResults([]);}}>🔙</button>
             )}
-            <h2 className="results-title">{searchActive ? "Search Results" : "Your Music"}</h2>
+            <h2 className="results-title">{searchActive ? "Search Results" : "My Library"}</h2>
           </div>
 
           {showHome ? (
@@ -406,34 +416,34 @@ export default function App() {
                 currentSong={currentYt}
                 onCreatePlaylist={async (n) => { 
                   await fetch(`${API}/api/playlists`, { 
-                    method:"POST", 
-                    headers:{"Content-Type":"application/json"}, 
-                    body:JSON.stringify({name:n}) 
+                    method: "POST", 
+                    headers: { "Content-Type": "application/json" }, 
+                    body: JSON.stringify({ name: n }) 
                   }); 
                   fetchPlaylists(); 
                 }}
                 onRenamePlaylist={async (id, n) => { 
                   await fetch(`${API}/api/playlists/${id}`, { 
-                    method:"PUT", 
-                    headers:{"Content-Type":"application/json"}, 
-                    body:JSON.stringify({name:n}) 
+                    method: "PUT", 
+                    headers: { "Content-Type": "application/json" }, 
+                    body: JSON.stringify({ name: n }) 
                   }); 
                   fetchPlaylists(); 
                 }}
                 onAddSongToPlaylist={async (id, s) => { 
                   await fetch(`${API}/api/playlists/${id}/songs`, { 
-                    method:"POST", 
-                    headers:{"Content-Type":"application/json"}, 
-                    body:JSON.stringify(s) 
+                    method: "POST", 
+                    headers: { "Content-Type": "application/json" }, 
+                    body: JSON.stringify(s) 
                   }); 
                   fetchPlaylists(); 
                 }}
                 onRemoveSongFromPlaylist={async (id, vid) => { 
-                  await fetch(`${API}/api/playlists/${id}/songs/${vid}`, { method:"DELETE" }); 
+                  await fetch(`${API}/api/playlists/${id}/songs/${vid}`, { method: "DELETE" }); 
                   fetchPlaylists(); 
                 }}
                 onDeletePlaylist={async (id) => { 
-                  await fetch(`${API}/api/playlists/${id}`, { method:"DELETE" }); 
+                  await fetch(`${API}/api/playlists/${id}`, { method: "DELETE" }); 
                   fetchPlaylists(); 
                 }}
               />
@@ -454,8 +464,8 @@ export default function App() {
         </div>
 
         {currentYt && (
-          <div className="card now-playing-card">
-            <h2>Now Playing</h2>
+          <div className="card player-pane">
+            <h2 className="now-playing-label">Now Playing</h2>
             <div className="now-title">{currentYt.title}</div>
             <div className="now-meta">{currentYt.channel}</div>
 
