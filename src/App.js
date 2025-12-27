@@ -19,22 +19,20 @@ export default function App() {
   const [currentYt, setCurrentYt] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // --- Player refs / state ---
-  const [playerApiReady, setPlayerApiReady] = useState(false);
+  // --- Player refs ---
   const playerRef = useRef(null);
   const creatingRef = useRef(false); 
   const instantiateTimerRef = useRef(null); 
   const iframeIdRef = useRef(null); 
 
-  // recovery counters
+  // --- Logic Refs (To prevent dependency loops) ---
   const recoveryAttemptsRef = useRef(0);
   const shortPauseCountRef = useRef(0);
   const playStartTimestampRef = useRef(0);
+  const recoverBridgeRef = useRef(null); // Bridges the circular dependency
 
   // user-driven playback
   const [userStartedPlayback, setUserStartedPlayback] = useState(false);
-
-  // playtime UI
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -45,7 +43,10 @@ export default function App() {
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
   const [playlists, setPlaylists] = useState([]);
-  const [, setHistory] = useState([]);
+  const [, setHistory] = useState([]); // Kept to satisfy state structure if needed
+
+  // --- Player API Ready ---
+  const [playerApiReady, setPlayerApiReady] = useState(false);
 
   // ---------------- YT API loader ----------------
   useEffect(() => {
@@ -57,10 +58,7 @@ export default function App() {
     tag.src = "https://www.youtube.com/iframe_api";
     tag.async = true;
     document.body.appendChild(tag);
-    window.onYouTubeIframeAPIReady = () => {
-      console.log("[YT] API ready");
-      setPlayerApiReady(true);
-    };
+    window.onYouTubeIframeAPIReady = () => setPlayerApiReady(true);
   }, []);
 
   // ---------------- initial data ----------------
@@ -104,28 +102,19 @@ export default function App() {
     }, 500);
   }, [stopTimeUpdates]);
 
-  // ---------------- Handlers (Moved up to fix dependencies) ----------------
-  
+  // ---------------- Handlers ----------------
+
   const handlePlayerReady = useCallback((event) => {
     recoveryAttemptsRef.current = 0;
     try { event.target.mute?.(); } catch {}
     try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch {}
-    console.log("[YT] player ready");
   }, []);
 
-  // Forward declaration for createIframeAndPlayer to be used in tryRecoverPlayback
   const createIframeAndPlayer = useCallback((videoId) => {
-    if (creatingRef.current) {
-      if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
-        try { playerRef.current.loadVideoById(videoId); } catch {}
-      }
-      return;
-    }
-
+    if (creatingRef.current) return;
     creatingRef.current = true;
-    if (instantiateTimerRef.current) {
-      clearTimeout(instantiateTimerRef.current);
-    }
+
+    if (instantiateTimerRef.current) clearTimeout(instantiateTimerRef.current);
 
     const container = document.getElementById("yt-player-iframe");
     if (!container) {
@@ -159,71 +148,33 @@ export default function App() {
           videoId,
           height: "160",
           width: "320",
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            rel: 0,
-            playsinline: 1,
-            origin: window.location.origin,
-          },
+          playerVars: { autoplay: 0, controls: 0, rel: 0, playsinline: 1, origin: window.location.origin },
           events: {
             onReady: handlePlayerReady,
-            onStateChange: handlePlayerStateChange,
-            onError: (e) => {
-              console.error("[YT] onError", e && e.data);
-              tryRecoverPlayback();
-            },
+            onStateChange: (e) => recoverBridgeRef.current?.onStateChange(e),
+            onError: () => recoverBridgeRef.current?.tryRecover(),
           },
         });
-      } catch (err) {
-        console.error("[CREATE] failed:", err);
       } finally {
         creatingRef.current = false;
       }
     });
-
-    instantiateTimerRef.current = setTimeout(() => {
-      if (!playerRef.current) {
-        try {
-          playerRef.current = new window.YT.Player(instanceId, {
-            videoId,
-            height: "160",
-            width: "320",
-            playerVars: { autoplay: 0, controls: 0, rel: 0, playsinline: 1, origin: window.location.origin },
-            events: {
-              onReady: handlePlayerReady,
-              onStateChange: handlePlayerStateChange,
-              onError: () => tryRecoverPlayback(),
-            },
-          });
-        } catch (err) {
-          console.error("[CREATE] fallback failed:", err);
-        } finally {
-          creatingRef.current = false;
-        }
-      }
-    }, 900);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [handlePlayerReady]); 
+  }, [handlePlayerReady]);
 
   const tryRecoverPlayback = useCallback(() => {
     if (!userStartedPlayback || !playerRef.current || !window.YT) return;
-
-    const MAX = 4;
-    const RECREATE_AFTER = 3;
-    if (recoveryAttemptsRef.current >= MAX) return;
+    if (recoveryAttemptsRef.current >= 4) return;
 
     recoveryAttemptsRef.current += 1;
     const delay = 300 * recoveryAttemptsRef.current;
 
     setTimeout(() => {
       try { playerRef.current.playVideo?.(); } catch {}
-
       setTimeout(() => {
         try {
           const state = playerRef.current.getPlayerState?.();
           if (state !== window.YT.PlayerState.PLAYING) {
-            if (recoveryAttemptsRef.current >= RECREATE_AFTER) {
+            if (recoveryAttemptsRef.current >= 3) {
               const vid = currentYt?.videoId;
               try { playerRef.current.destroy?.(); } catch {}
               playerRef.current = null;
@@ -238,43 +189,43 @@ export default function App() {
     }, delay);
   }, [userStartedPlayback, currentYt, createIframeAndPlayer]);
 
-  const handlePlayerStateChange = useCallback((event) => {
-    const YT = window.YT;
-    if (!YT) return;
-
-    if (event.data === YT.PlayerState.PLAYING) {
-      setIsPlaying(true);
-      startTimeUpdates();
-      recoveryAttemptsRef.current = 0;
-      playStartTimestampRef.current = Date.now();
-      shortPauseCountRef.current = 0;
-    } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-      setIsPlaying(false);
-      if (event.data === YT.PlayerState.ENDED && duration) setCurrentTime(duration);
-      stopTimeUpdates();
-
-      try {
-        const t = playerRef.current.getCurrentTime?.() || 0;
-        const sincePlay = Date.now() - (playStartTimestampRef.current || 0);
-        if (userStartedPlayback && sincePlay < 4000 && t < 2) {
-          shortPauseCountRef.current += 1;
-          if (shortPauseCountRef.current >= 2) {
-            const vid = currentYt?.videoId;
-            try { playerRef.current.destroy?.(); } catch {}
-            playerRef.current = null;
-            shortPauseCountRef.current = 0;
-            recoveryAttemptsRef.current = 0;
-            setTimeout(() => { 
-                if (vid) createIframeAndPlayer(vid); 
-                setTimeout(() => { tryRecoverPlayback(); }, 600); 
-            }, 200);
-          } else {
-            tryRecoverPlayback();
-          }
+  // Set the Bridge so the Player can call recovery logic
+  useEffect(() => {
+    recoverBridgeRef.current = {
+      tryRecover: tryRecoverPlayback,
+      onStateChange: (event) => {
+        const YT = window.YT;
+        if (!YT) return;
+        if (event.data === YT.PlayerState.PLAYING) {
+          setIsPlaying(true);
+          startTimeUpdates();
+          recoveryAttemptsRef.current = 0;
+          playStartTimestampRef.current = Date.now();
+          shortPauseCountRef.current = 0;
+        } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+          setIsPlaying(false);
+          stopTimeUpdates();
+          try {
+            const t = playerRef.current.getCurrentTime?.() || 0;
+            const sincePlay = Date.now() - playStartTimestampRef.current;
+            if (userStartedPlayback && sincePlay < 4000 && t < 2) {
+              shortPauseCountRef.current += 1;
+              if (shortPauseCountRef.current >= 2) {
+                const vid = currentYt?.videoId;
+                try { playerRef.current.destroy?.(); } catch {}
+                playerRef.current = null;
+                shortPauseCountRef.current = 0;
+                recoveryAttemptsRef.current = 0;
+                setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
+              } else {
+                tryRecoverPlayback();
+              }
+            }
+          } catch {}
         }
-      } catch (e) {}
-    }
-  }, [duration, startTimeUpdates, stopTimeUpdates, tryRecoverPlayback, userStartedPlayback, currentYt, createIframeAndPlayer]);
+      }
+    };
+  }, [tryRecoverPlayback, createIframeAndPlayer, startTimeUpdates, stopTimeUpdates, userStartedPlayback, currentYt]);
 
   // ---------------- lifecycle ----------------
   useEffect(() => {
@@ -295,7 +246,7 @@ export default function App() {
     };
   }, [stopTimeUpdates]);
 
-  // ---------------- app handlers ----------------
+  // ---------------- handlers ----------------
   const handleUserStartPlayback = useCallback(() => {
     if (!playerRef.current) return;
     try {
@@ -327,18 +278,16 @@ export default function App() {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name })
       });
       const data = await res.json();
-      if (data.error) return;
-      setPlaylists((prev) => [...prev, { ...data, id: data.id.toString() }]);
+      if (data.id) setPlaylists((prev) => [...prev, { ...data, id: data.id.toString() }]);
     } catch (err) {}
   }, []);
 
   const handleRenamePlaylist = useCallback(async (id, newName) => {
     try {
-      const res = await fetch(`${API}/api/playlists/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
-      if (!res.ok) return;
-      const res2 = await fetch(`${API}/api/playlists`);
-      const data2 = await res2.json();
-      if (data2.playlists) setPlaylists(data2.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
+      await fetch(`${API}/api/playlists/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) });
+      const res = await fetch(`${API}/api/playlists`);
+      const data = await res.json();
+      if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
     } catch (err) {}
   }, []);
 
@@ -362,11 +311,10 @@ export default function App() {
 
   const handleDeletePlaylist = useCallback(async (playlistId) => {
     try {
-      const res = await fetch(`${API}/api/playlists/${playlistId}`, { method: "DELETE" });
-      if (!res.ok) return;
-      const res2 = await fetch(`${API}/api/playlists`);
-      const data2 = await res2.json();
-      if (data2.playlists) setPlaylists(data2.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
+      await fetch(`${API}/api/playlists/${playlistId}`, { method: "DELETE" });
+      const res = await fetch(`${API}/api/playlists`);
+      const data = await res.json();
+      if (data.playlists) setPlaylists(data.playlists.map((pl) => ({ ...pl, id: pl.id.toString() })));
     } catch (err) {}
   }, []);
 
@@ -425,37 +373,29 @@ export default function App() {
   const handleSkipBackward = useCallback(() => {
     if (!playerRef.current) return;
     const ct = playerRef.current.getCurrentTime?.() || currentTime;
-    const newTime = Math.max(0, ct - 10);
-    playerRef.current.seekTo?.(newTime, true);
-    setCurrentTime(newTime);
+    playerRef.current.seekTo?.(Math.max(0, ct - 10), true);
   }, [currentTime]);
 
   const handleSkipForward = useCallback(() => {
     if (!playerRef.current) return;
-    const dur = duration || (playerRef.current.getDuration?.() || 0);
     const ct = playerRef.current.getCurrentTime?.() || currentTime;
-    const newTime = Math.min(dur, ct + 10);
-    playerRef.current.seekTo?.(newTime, true);
-    setCurrentTime(newTime);
+    playerRef.current.seekTo?.(Math.min(duration, ct + 10), true);
   }, [currentTime, duration]);
 
   const handleTrackClick = useCallback((e) => {
     if (!playerRef.current || !duration || !trackBarRef.current) return;
     const rect = trackBarRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percent = Math.min(Math.max(clickX / rect.width, 0), 1);
-    const newTime = percent * duration;
-    playerRef.current.seekTo?.(newTime, true);
-    setCurrentTime(newTime);
+    const percent = Math.min(Math.max((e.clientX - rect.left) / rect.width, 0), 1);
+    playerRef.current.seekTo?.(percent * duration, true);
   }, [duration]);
 
-  const formatTime = useCallback((sec) => {
+  const formatTime = (sec) => {
     if (!sec || isNaN(sec)) return "0:00";
     const totalSeconds = Math.floor(sec);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  }, []);
+  };
 
   const likedPlaylist = playlists.find((pl) => pl.isDefault);
   const isCurrentLiked = !!currentYt && !!likedPlaylist && likedPlaylist.songs.some((s) => s.videoId === currentYt.videoId);
@@ -511,14 +451,16 @@ export default function App() {
               <div className="now-title">{currentYt.title}</div>
               <div className="now-meta">{currentYt.channel}</div>
               <div className={`vibe vibe-large ${isPlaying ? "playing" : ""}`}>
-                <span className="vibe-bar" /><span className="vibe-bar" /><span className="vibe-bar" /><span className="vibe-bar" /><span className="vibe-bar" />
+                {[...Array(5)].map((_, i) => <span key={i} className="vibe-bar" />)}
               </div>
               <div className="yt-player-wrapper" style={{ height: 1, width: 1, overflow: "hidden", position: "absolute", left: -9999 }}>
-                <div id="yt-player-iframe" className="yt-player" style={{ width: "100%", height: "100%" }} />
+                <div id="yt-player-iframe" className="yt-player" />
               </div>
               <div className="track-container">
                 <div className="track-time"><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
-                <div className="track-bar" ref={trackBarRef} onClick={handleTrackClick}><div className="track-bar-inner" style={{ width: `${progressPercent}%` }} /></div>
+                <div className="track-bar" ref={trackBarRef} onClick={handleTrackClick}>
+                    <div className="track-bar-inner" style={{ width: `${progressPercent}%` }} />
+                </div>
               </div>
               <div className="controls">
                 <button onClick={handleSkipBackward}>↩️</button>
@@ -527,9 +469,7 @@ export default function App() {
                 <button onClick={handleToggleLike}>{isCurrentLiked ? "❤️" : "🤍"}</button>
               </div>
             </>
-          ) : (
-            <p className="status-text">Select a song from the results.</p>
-          )}
+          ) : <p className="status-text">Select a song from the results.</p>}
         </div>
       </div>
     </div>
