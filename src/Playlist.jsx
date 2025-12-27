@@ -1,9 +1,22 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, {
+  useState,
+  useMemo,
+  useEffect,
+  useRef,
+  useCallback,
+} from "react";
 import "./Playlist.css";
 
-const API_BASE = window.location.hostname === "localhost" 
-  ? "http://localhost:5001" 
-  : `http://${window.location.hostname}:5001`;
+/* =====================================================
+   CONFIGURATION
+===================================================== */
+
+const INITIAL_CHUNK_SIZE = 25;
+const LOAD_MORE_THRESHOLD = 200;
+
+/* =====================================================
+   PLAYLIST COMPONENT
+===================================================== */
 
 function Playlist({
   playlists,
@@ -15,255 +28,459 @@ function Playlist({
   onDeletePlaylist,
   currentSong,
 }) {
-  const [showNewInput, setShowNewInput] = useState(false);
+
+  /* =====================================================
+     SIDEBAR STATE
+  ===================================================== */
+
+  const [showCreateInput, setShowCreateInput] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
 
+  /* =====================================================
+     PAGE NAVIGATION STATE
+  ===================================================== */
+
   const [activePlaylistId, setActivePlaylistId] = useState(null);
-  const [overlayOpen, setOverlayOpen] = useState(false);
-  const [editName, setEditName] = useState("");
+
+  /* =====================================================
+     PLAYLIST EDIT STATE
+  ===================================================== */
+
+  const [editableName, setEditableName] = useState("");
+
+  /* =====================================================
+     SEARCH STATE
+  ===================================================== */
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+
+  /* =====================================================
+     INFINITE SCROLL STATE
+  ===================================================== */
+
+  const [visibleCount, setVisibleCount] = useState(
+    INITIAL_CHUNK_SIZE
+  );
+  const songScrollRef = useRef(null);
+
+  /* =====================================================
+     DELETE CONFIRM STATE
+  ===================================================== */
 
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] =
+    useState(false);
 
-  const activePlaylist = useMemo(
-    () => playlists.find((p) => p.id === activePlaylistId) || null,
-    [playlists, activePlaylistId]
-  );
+  /* =====================================================
+     DERIVED ACTIVE PLAYLIST
+  ===================================================== */
+
+  const activePlaylist = useMemo(() => {
+    if (!activePlaylistId) return null;
+    return (
+      playlists.find(
+        (playlist) => playlist.id === activePlaylistId
+      ) || null
+    );
+  }, [playlists, activePlaylistId]);
+
+  /* =====================================================
+     FILTERED SONGS
+  ===================================================== */
+
+  const filteredSongs = useMemo(() => {
+    if (!activePlaylist) return [];
+
+    if (!searchQuery.trim()) {
+      return activePlaylist.songs;
+    }
+
+    const query = searchQuery.toLowerCase();
+
+    return activePlaylist.songs.filter((song) =>
+      song.title.toLowerCase().includes(query)
+    );
+  }, [activePlaylist, searchQuery]);
+
+  /* =====================================================
+     VISIBLE SONGS (INFINITE SCROLL)
+  ===================================================== */
+
+  const visibleSongs = useMemo(() => {
+    return filteredSongs.slice(0, visibleCount);
+  }, [filteredSongs, visibleCount]);
+
+  /* =====================================================
+     EFFECTS
+  ===================================================== */
 
   useEffect(() => {
-    if (activePlaylist) {
-      setEditName(activePlaylist.name || "");
-    }
-  }, [activePlaylist]);
-
-  const handleNewPlaylist = () => setShowNewInput(true);
-
-  const handleCreate = () => {
-    const name = newPlaylistName.trim();
-    if (!name) return;
-    onCreatePlaylist && onCreatePlaylist(name);
-    setNewPlaylistName("");
-    setShowNewInput(false);
-  };
-
-  const handleCancelNew = () => {
-    setNewPlaylistName("");
-    setShowNewInput(false);
-  };
-
-  const handleOpenPlaylist = (pl) => {
-    setActivePlaylistId(pl.id);
-    setOverlayOpen(true);
-    setSearchQuery("");
-    setSearchResults([]);
-  };
-
-  const handleCloseOverlay = () => {
-    setOverlayOpen(false);
-    setActivePlaylistId(null);
-  };
-
-  const handlePlaySong = (song) => {
-    onSelectSong && onSelectSong(song);
-  };
-
-  const handleSaveName = () => {
-    if (!activePlaylist || activePlaylist.isDefault) return;
-    const name = editName.trim();
-    if (!name) return;
-    if (onRenamePlaylist) onRenamePlaylist(activePlaylist.id, name);
-  };
-
-  /* ====== FIXED REMOVE LOGIC ====== */
-  const handleRemoveSong = async (song) => {
     if (!activePlaylist) return;
 
-    // If this is the "Liked" playlist, we MUST use the toggle endpoint 
-    // so the heart icon in App.jsx also updates.
-    if (activePlaylist.isDefault) {
-      try {
-        await fetch(`${API_BASE}/api/liked/toggle`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(song),
-        });
-        // We trigger the generic remove handler just to force App.jsx to refresh the list
-        if (onRemoveSongFromPlaylist) {
-          onRemoveSongFromPlaylist(activePlaylist.id, song.videoId);
-        }
-      } catch (err) {
-        console.error("Error unliking song:", err);
-      }
-    } else {
-      // Normal playlist removal
-      if (onRemoveSongFromPlaylist) {
-        onRemoveSongFromPlaylist(activePlaylist.id, song.videoId);
-      }
+    setEditableName(activePlaylist.name);
+    setSearchQuery("");
+    setVisibleCount(INITIAL_CHUNK_SIZE);
+  }, [activePlaylist]);
+
+  /* =====================================================
+     HANDLERS — NAVIGATION
+  ===================================================== */
+
+  const openPlaylistPage = (playlist) => {
+    setActivePlaylistId(playlist.id);
+  };
+
+  const goBackToSidebar = () => {
+    setActivePlaylistId(null);
+    setVisibleCount(INITIAL_CHUNK_SIZE);
+  };
+
+  /* =====================================================
+     HANDLERS — CREATE PLAYLIST
+  ===================================================== */
+
+  const handleCreatePlaylist = () => {
+    const name = newPlaylistName.trim();
+
+    if (!name) return;
+
+    if (onCreatePlaylist) {
+      onCreatePlaylist(name);
+    }
+
+    setNewPlaylistName("");
+    setShowCreateInput(false);
+  };
+
+  /* =====================================================
+     HANDLERS — RENAME PLAYLIST
+  ===================================================== */
+
+  const handleRenamePlaylist = () => {
+    if (!activePlaylist) return;
+    if (activePlaylist.isDefault) return;
+
+    const name = editableName.trim();
+
+    if (!name) return;
+
+    if (onRenamePlaylist) {
+      onRenamePlaylist(activePlaylist.id, name);
+    }
+  };
+
+  /* =====================================================
+     HANDLERS — SONG ACTIONS
+  ===================================================== */
+
+  const handlePlaySong = (song) => {
+    if (onSelectSong) {
+      onSelectSong(song);
     }
   };
 
   const handleAddCurrentSong = () => {
-    if (!activePlaylist || !currentSong) return;
-    onAddSongToPlaylist && onAddSongToPlaylist(activePlaylist.id, currentSong);
-  };
+    if (!activePlaylist) return;
+    if (!currentSong) return;
 
-  const handleSearchInside = async (e) => {
-    e.preventDefault();
-    const q = searchQuery.trim();
-    if (!q) return;
-    setSearchLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/youtube/search?query=${encodeURIComponent(q)}`);
-      const data = await res.json();
-      setSearchResults(data.results || []);
-    } catch (err) {
-      console.error("Search error:", err);
-    } finally {
-      setSearchLoading(false);
+    if (onAddSongToPlaylist) {
+      onAddSongToPlaylist(
+        activePlaylist.id,
+        currentSong
+      );
     }
   };
 
-  const handleAddFromSearch = (song) => {
+  const handleRemoveSong = (song) => {
     if (!activePlaylist) return;
-    onAddSongToPlaylist && onAddSongToPlaylist(activePlaylist.id, song);
+
+    if (onRemoveSongFromPlaylist) {
+      onRemoveSongFromPlaylist(
+        activePlaylist.id,
+        song.videoId
+      );
+    }
   };
 
-  const handleDeleteClick = (e, pl) => {
-    e.stopPropagation();
-    if (pl.isDefault) return;
-    setDeleteTarget(pl);
+  /* =====================================================
+     INFINITE SCROLL HANDLER
+  ===================================================== */
+
+  const handleSongScroll = useCallback(() => {
+    const el = songScrollRef.current;
+    if (!el) return;
+
+    const scrolledToBottom =
+      el.scrollTop + el.clientHeight >=
+      el.scrollHeight - LOAD_MORE_THRESHOLD;
+
+    if (scrolledToBottom) {
+      setVisibleCount((prev) =>
+        Math.min(
+          prev + INITIAL_CHUNK_SIZE,
+          filteredSongs.length
+        )
+      );
+    }
+  }, [filteredSongs.length]);
+
+  /* =====================================================
+     DELETE PLAYLIST HANDLERS
+  ===================================================== */
+
+  const askDeletePlaylist = (playlist, event) => {
+    event.stopPropagation();
+    setDeleteTarget(playlist);
     setShowDeleteConfirm(true);
   };
 
-  const handleConfirmDelete = () => {
-    if (deleteTarget && onDeletePlaylist) onDeletePlaylist(deleteTarget.id);
-    setShowDeleteConfirm(false);
+  const confirmDeletePlaylist = () => {
+    if (!deleteTarget) return;
+
+    if (onDeletePlaylist) {
+      onDeletePlaylist(deleteTarget.id);
+    }
+
+    if (deleteTarget.id === activePlaylistId) {
+      setActivePlaylistId(null);
+    }
+
     setDeleteTarget(null);
+    setShowDeleteConfirm(false);
   };
 
-  return (
-    <>
-      <div className="playlist-section">
+  /* =====================================================
+     RENDER — SIDEBAR VIEW
+  ===================================================== */
+
+  if (!activePlaylist) {
+    return (
+      <div className="playlist-page">
+
+        {/* HEADER */}
         <div className="playlist-header">
-          <h3 className="playlist-title">Playlists</h3>
-          {!showNewInput && (
-            <button type="button" className="playlist-new-btn" onClick={handleNewPlaylist}>+ New</button>
+          <h2 className="playlist-title">
+            Your Playlists
+          </h2>
+
+          {!showCreateInput && (
+            <button
+              className="playlist-new-btn"
+              onClick={() =>
+                setShowCreateInput(true)
+              }
+            >
+              + New
+            </button>
           )}
         </div>
 
-        {showNewInput && (
+        {/* CREATE PLAYLIST */}
+        {showCreateInput && (
           <div className="playlist-new-row">
             <input
-              type="text"
               className="playlist-new-input"
-              placeholder="Name..."
+              placeholder="Playlist name"
               value={newPlaylistName}
-              onChange={(e) => setNewPlaylistName(e.target.value)}
+              onChange={(e) =>
+                setNewPlaylistName(e.target.value)
+              }
             />
-            <button type="button" className="playlist-new-create" onClick={handleCreate}>Create</button>
-            <button type="button" className="playlist-new-cancel" onClick={handleCancelNew}>✕</button>
+            <button
+              className="playlist-new-create"
+              onClick={handleCreatePlaylist}
+            >
+              Create
+            </button>
+            <button
+              className="playlist-new-cancel"
+              onClick={() =>
+                setShowCreateInput(false)
+              }
+            >
+              ✕
+            </button>
           </div>
         )}
 
+        {/* PLAYLIST LIST */}
         <div className="playlist-list">
-          {playlists.map((pl) => (
-            <div key={pl.id} className="playlist-item" onClick={() => handleOpenPlaylist(pl)}>
+          {playlists.map((playlist) => (
+            <div
+              key={playlist.id}
+              className="playlist-item"
+              onClick={() =>
+                openPlaylistPage(playlist)
+              }
+            >
               <div className="playlist-main">
-                <span className="playlist-name">{pl.name}</span>
-                <div className="playlist-main-right">
-                  {pl.isDefault && <span className="playlist-badge-liked">Liked</span>}
-                  {!pl.isDefault && (
-                    <button className="playlist-delete-btn" onClick={(e) => handleDeleteClick(e, pl)}>🗑</button>
-                  )}
-                </div>
+                <span className="playlist-name">
+                  {playlist.name}
+                </span>
+
+                {!playlist.isDefault && (
+                  <button
+                    className="playlist-delete-btn"
+                    onClick={(e) =>
+                      askDeletePlaylist(
+                        playlist,
+                        e
+                      )
+                    }
+                  >
+                    🗑
+                  </button>
+                )}
               </div>
-              <div className="playlist-meta">{pl.songs?.length || 0} song{pl.songs?.length !== 1 ? "s" : ""}</div>
+
+              <div className="playlist-meta">
+                {playlist.songs.length} songs
+              </div>
             </div>
           ))}
         </div>
+
+        {/* DELETE CONFIRM */}
+        {showDeleteConfirm && (
+          <div className="playlist-delete-overlay">
+            <div className="playlist-delete-dialog">
+              <h4>Delete playlist?</h4>
+              <p>
+                Are you sure you want to delete{" "}
+                <strong>
+                  {deleteTarget?.name}
+                </strong>
+                ?
+              </p>
+              <div className="playlist-delete-actions">
+                <button
+                  onClick={() =>
+                    setShowDeleteConfirm(false)
+                  }
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={
+                    confirmDeletePlaylist
+                  }
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+      </div>
+    );
+  }
+
+  /* =====================================================
+     RENDER — FULL PAGE PLAYLIST VIEW
+  ===================================================== */
+
+  return (
+    <div className="playlist-page">
+
+      {/* TOP BAR */}
+      <div className="playlist-page-top">
+        <button
+          className="playlist-back-btn"
+          onClick={goBackToSidebar}
+        >
+          ← Back
+        </button>
+
+        <input
+          className="playlist-title-input"
+          value={editableName}
+          onChange={(e) =>
+            setEditableName(e.target.value)
+          }
+          onBlur={handleRenamePlaylist}
+        />
       </div>
 
-      {overlayOpen && activePlaylist && (
-        <div className="playlist-overlay">
-          <div className="playlist-overlay-content">
-            <div className="playlist-overlay-header">
-              <button type="button" className="playlist-overlay-back" onClick={handleCloseOverlay}>🔙</button>
-              <div className="playlist-overlay-title-block">
-                <input
-                  className="playlist-edit-name-input"
-                  value={editName}
-                  readOnly={activePlaylist.isDefault}
-                  onChange={(e) => setEditName(e.target.value)}
-                />
-                {!activePlaylist.isDefault && (
-                  <button type="button" className="playlist-edit-name-save" onClick={handleSaveName}>Save</button>
-                )}
-              </div>
-            </div>
-
-            {currentSong && (
-              <div className="playlist-add-current-row">
-                <span className="playlist-add-current-label">Current: {currentSong.title}</span>
-                <button type="button" className="playlist-add-current-btn" onClick={handleAddCurrentSong}>+ Add current</button>
-              </div>
-            )}
-
-            <form className="playlist-search-row" onSubmit={handleSearchInside}>
-              <input
-                className="playlist-search-input"
-                placeholder="Search songs to add..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-              <button type="submit" className="playlist-search-btn">🔍</button>
-            </form>
-
-            {searchLoading && <div className="playlist-search-loading">Searching...</div>}
-            
-            <div className="playlist-search-results">
-              {searchResults.map((song) => (
-                <div key={song.videoId} className="playlist-search-item">
-                  {song.thumbnail && <img src={song.thumbnail} alt="" className="playlist-search-thumb" />}
-                  <div className="playlist-search-info">
-                    <div className="playlist-song-title">{song.title}</div>
-                  </div>
-                  <button type="button" className="playlist-search-add" onClick={() => handleAddFromSearch(song)}>➕</button>
-                </div>
-              ))}
-            </div>
-
-            <div className="playlist-overlay-list">
-              {activePlaylist.songs?.map((song) => (
-                <div key={song.videoId} className="playlist-overlay-item">
-                  {song.thumbnail && <img src={song.thumbnail} alt="" className="playlist-overlay-thumb" onClick={() => handlePlaySong(song)} />}
-                  <div className="playlist-overlay-info" onClick={() => handlePlaySong(song)}>
-                    <div className="playlist-song-title">{song.title}</div>
-                    <div className="playlist-song-meta">{song.channel}</div>
-                  </div>
-                  <button type="button" className="playlist-overlay-remove" onClick={() => handleRemoveSong(song)}>✕</button>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* ADD CURRENT SONG */}
+      {currentSong && (
+        <div className="playlist-add-current">
+          <span className="playlist-add-current-label">
+            Current: {currentSong.title}
+          </span>
+          <button
+            className="playlist-add-current-btn"
+            onClick={handleAddCurrentSong}
+          >
+            + Add current
+          </button>
         </div>
       )}
 
-      {showDeleteConfirm && (
-        <div className="playlist-delete-overlay">
-          <div className="playlist-delete-dialog">
-            <h4>Delete playlist?</h4>
-            <div className="playlist-delete-actions">
-              <button onClick={() => setShowDeleteConfirm(false)}>Cancel</button>
-              <button className="playlist-delete-confirm" onClick={handleConfirmDelete}>Delete</button>
+      {/* SEARCH */}
+      <div className="playlist-search">
+        <input
+          placeholder="Search in playlist..."
+          value={searchQuery}
+          onChange={(e) =>
+            setSearchQuery(e.target.value)
+          }
+        />
+      </div>
+
+      {/* SONG LIST */}
+      <div
+        className="playlist-songs"
+        ref={songScrollRef}
+        onScroll={handleSongScroll}
+      >
+        {visibleSongs.map((song) => (
+          <div
+            key={song.videoId}
+            className="playlist-song"
+          >
+            <img
+              src={song.thumbnail}
+              alt=""
+              onClick={() =>
+                handlePlaySong(song)
+              }
+            />
+
+            <div
+              className="playlist-song-info"
+              onClick={() =>
+                handlePlaySong(song)
+              }
+            >
+              <div className="title">
+                {song.title}
+              </div>
+              <div className="meta">
+                {song.channel}
+              </div>
             </div>
+
+            <button
+              className="remove"
+              onClick={() =>
+                handleRemoveSong(song)
+              }
+            >
+              ✕
+            </button>
           </div>
-        </div>
-      )}
-    </>
+        ))}
+
+        {visibleCount <
+          filteredSongs.length && (
+          <div className="playlist-load-more">
+            Loading more songs…
+          </div>
+        )}
+      </div>
+
+    </div>
   );
 }
 

@@ -1,481 +1,358 @@
-/* src/Playlist.css */
+/* =====================================================
+   RESET & BASE
+===================================================== */
 
-.playlist-section {
-  margin-top: 8px;
-  padding: 10px 8px 8px;
-  border-radius: 10px;
-  background: #020617;
-  border: 1px solid #1f2937;
+* {
+  box-sizing: border-box;
 }
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #000;
+  color: #e5e7eb;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, Ubuntu, "Helvetica Neue", Arial,
+    sans-serif;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+
+input {
+  font-family: inherit;
+  outline: none;
+}
+
+img {
+  display: block;
+  user-select: none;
+}
+
+/* =====================================================
+   FULL PAGE ROOT
+===================================================== */
+
+/* ===============================
+   ROOT WRAPPER (AUTO HEIGHT)
+================================ */
+
+.playlist-page {
+  display: flex;
+  flex-direction: column;
+  background: #020617;
+}
+
+/* ===============================
+   FULL PAGE MODE (WHEN PLAYLIST OPEN)
+================================ */
+
+/* this class exists ONLY when playlist is open */
+.playlist-page .playlist-page-top {
+  /* marker selector */
+}
+
+.playlist-page:has(.playlist-page-top) {
+  height: 100vh;
+  overflow: hidden;
+}
+
+
+/* =====================================================
+   SIDEBAR HEADER (PLAYLIST LIST PAGE)
+===================================================== */
 
 .playlist-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #1f2937;
+  flex-shrink: 0;
 }
 
 .playlist-title {
-  margin: 0;
   font-size: 14px;
-  text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: #9ca3af;
 }
 
+/* =====================================================
+   CREATE PLAYLIST
+===================================================== */
+
 .playlist-new-btn {
-  padding: 4px 10px;
-  font-size: 12px;
+  padding: 6px 14px;
   border-radius: 999px;
+  font-size: 12px;
   border: 1px solid #4b5563;
-  background: #020617;
+  background: transparent;
   color: #e5e7eb;
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
 }
 
 .playlist-new-btn:hover {
   background: #111827;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.8);
 }
 
-/* inline new playlist row */
-
 .playlist-new-row {
+  padding: 10px 16px;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-  margin-top: 2px;
+  gap: 8px;
+  border-bottom: 1px solid #1f2937;
+  flex-shrink: 0;
 }
 
 .playlist-new-input {
   flex: 1;
-  padding: 4px 8px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid #4b5563;
   background: #020617;
   color: #e5e7eb;
-  font-size: 12px;
-  outline: none;
-}
-
-.playlist-new-input::placeholder {
-  color: #6b7280;
+  font-size: 13px;
 }
 
 .playlist-new-create {
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid #4c6fff;
   background: #1d4ed8;
-  color: #e5e7eb;
-  cursor: pointer;
-}
-
-.playlist-new-create:hover {
-  background: #2563eb;
+  color: #fff;
 }
 
 .playlist-new-cancel {
-  padding: 2px 8px;
-  font-size: 12px;
+  padding: 8px 14px;
   border-radius: 999px;
   border: 1px solid #4b5563;
-  background: #020617;
+  background: transparent;
   color: #9ca3af;
-  cursor: pointer;
 }
 
-.playlist-empty {
-  font-size: 13px;
-  color: #6b7280;
-  margin: 4px 0 0;
-}
-
-/* sidebar list */
+/* =====================================================
+   PLAYLIST LIST (FIXED EMPTY SPACE ISSUE)
+===================================================== */
 
 .playlist-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
+
+  padding: 12px 16px;
+  overflow-y: auto;
+
+  /* 🔥 KEY FIX */
+  max-height: calc(100vh - 160px); /* header + create row */
 }
 
+/* no flex:1 here */
+
 .playlist-item {
-  padding: 6px 6px 6px;
-  border-radius: 8px;
-  border: 1px solid #111827;
+  padding: 12px;
+  border-radius: 14px;
   background: #020617;
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease, border-color 0.15s;
+  border: 1px solid #111827;
 }
 
 .playlist-item:hover {
   background: #111827;
   border-color: #4c6fff;
-  transform: translateY(-1px);
 }
 
 .playlist-main {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
 }
 
 .playlist-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
-  color: #e5e7eb;
-}
-
-.playlist-badge-liked {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(248, 250, 252, 0.08);
-  border: 1px solid rgba(96, 165, 250, 0.6);
-  color: #93c5fd;
 }
 
 .playlist-meta {
-  font-size: 11px;
-  color: #9ca3af;
-  margin-top: 2px;
-}
-
-/* ========== FULL SCREEN OVERLAY ========== */
-
-.playlist-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.9); /* Slightly darker for full-screen focus */
-  display: flex;
-  justify-content: center;
-  align-items: stretch; /* Aligns box to the top of the screen */
-  z-index: 2000;
-  overflow: hidden;
-}
-
-/* 1. Main container - Lock it down and use Flex */
-.playlist-overlay-content {
-  width: 100%;
-  max-width: 720px;
-  height: 100dvh; /* Full screen height */
-  background: #020617;
-  border-radius: 0;
-  display: flex;          /* CRITICAL: Must be flex */
-  flex-direction: column; /* CRITICAL: Stack header on top of list */
-  overflow: hidden;       /* Parent should not scroll, only the list child */
-  position: relative;
-  padding: 0;
-}
-
-
-
-.playlist-overlay-header {
-  padding: 20px 15px 10px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid #1f2937;
-}
-
-/* 3. SCROLL ONLY THE SONGS: Allow the list to fill the remaining space */
-
-
-
-.playlist-overlay-header {
-  flex-shrink: 0;
-  padding: 20px 15px 10px;
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid #1f2937;
-}
-
-
-.playlist-overlay-back {
-  border: 1px solid #374151;
-  background: #020617;
-  color: #e5e7eb;
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  margin-right: 10px;
-  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s;
-}
-
-.playlist-overlay-back:hover {
-  background: #111827;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.9);
-}
-
-.playlist-overlay-title-block {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.playlist-edit-name-input {
-  min-width: 140px;
-  max-width: 260px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid #4b5563;
-  background: #020617;
-  color: #e5e7eb;
-  font-size: 13px;
-  outline: none;
-}
-
-.playlist-edit-name-save {
-  padding: 4px 10px;
-  font-size: 11px;
-  border-radius: 999px;
-  border: 1px solid #4c6fff;
-  background: #1d4ed8;
-  color: #e5e7eb;
-  cursor: pointer;
-}
-
-.playlist-edit-name-save:hover {
-  background: #2563eb;
-}
-
-.playlist-edit-badge-readonly {
-  font-size: 11px;
-  color: #9ca3af;
-}
-
-/* add current row */
-
-.playlist-add-current-row {
-  position: relative;
-  top: 0; /* Adjust based on the height of your header */
-  z-index: 99;
-  background: #020617;
-  padding: 10px 15px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-radius: 0; /* Flat against sides while sticky */
-  margin: 0;
-}
-
-.playlist-add-current-label {
-  font-size: 12px;
-  color: #e5e7eb;
-}
-
-.playlist-add-current-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 999px;
-  border: 1px solid #4c6fff;
-  background: #1d4ed8;
-  color: #e5e7eb;
-  cursor: pointer;
-}
-
-.playlist-add-current-btn:hover {
-  background: #2563eb;
-}
-
-/* search row */
-
-.playlist-search-row {
-  position: relative;
-  top: 0; /* Adjust based on cumulative height of header + add row */
-  z-index: 98;
-  background: #020617;
-  padding: 10px 15px 15px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-bottom: 1px solid #1f2937;
-}
-
-.playlist-search-input {
-  flex: 1;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid #4b5563;
-  background: #020617;
-  color: #e5e7eb;
-  font-size: 12px;
-  outline: none;
-}
-
-.playlist-search-input::placeholder {
-  color: #6b7280;
-}
-
-.playlist-search-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 999px;
-  border: 1px solid #4b5563;
-  background: #020617;
-  color: #e5e7eb;
-  cursor: pointer;
-}
-
-.playlist-search-btn:hover {
-  background: #111827;
-}
-
-.playlist-search-loading {
-  font-size: 12px;
-  color: #9ca3af;
   margin-top: 4px;
+  font-size: 11px;
+  color: #9ca3af;
 }
 
-.playlist-search-results {
-  margin-top: 6px;
-  max-height: 160px;
-  overflow-y: auto;
-  border-radius: 10px;
-  border: 1px solid #111827;
-  padding: 4px 4px 4px;
-}
-
-.playlist-search-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 2px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.playlist-search-item:hover {
-  background: #0b1120;
-}
-
-.playlist-search-thumb {
-  width: 48px;
-  height: 32px;
-  border-radius: 6px;
-  object-fit: cover;
-}
-
-.playlist-search-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.playlist-search-add {
+.playlist-delete-btn {
+  background: none;
   border: none;
-  background: transparent;
-  font-size: 16px;
-  cursor: pointer;
-  color: #a5b4fc;
+  color: #9ca3af;
 }
 
-.playlist-search-add:hover {
-  color: #c4b5fd;
+.playlist-delete-btn:hover {
+  color: #f87171;
 }
 
-/* songs list */
+/* =====================================================
+   FULL PAGE TOP BAR (PLAYLIST VIEW)
+===================================================== */
 
-
-.playlist-overlay-list {
-  flex: 1;              /* Take up all remaining screen space */
-  overflow-y: auto !important; /* Enable the scrollbar */
-  padding: 10px 15px 40px;    /* Extra bottom padding for mobile */
-  min-height: 0;        /* Required for flex-scroll logic */
-  display: block;
-  -webkit-overflow-scrolling: touch; /* Smooth scroll for iPhone */
-}
-.playlist-overlay-item {
+.playlist-page-top {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 4px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  padding: 14px 16px;
+  border-bottom: 1px solid #1f2937;
+  background: #020617;
+  flex-shrink: 0;
 }
 
-.playlist-overlay-item:hover {
+.playlist-back-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #374151;
+  background: transparent;
+  color: #e5e7eb;
+}
+
+.playlist-title-input {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #4b5563;
+  background: #020617;
+  color: #e5e7eb;
+  font-size: 14px;
+}
+
+/* =====================================================
+   ADD CURRENT SONG
+===================================================== */
+
+.playlist-add-current {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #1f2937;
+  background: #020617;
+  flex-shrink: 0;
+}
+
+.playlist-add-current-label {
+  font-size: 13px;
+}
+
+.playlist-add-current-btn {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid #4c6fff;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+/* =====================================================
+   SEARCH BAR
+===================================================== */
+
+.playlist-search {
+  padding: 12px 16px;
+  border-bottom: 1px solid #1f2937;
+  background: #020617;
+  flex-shrink: 0;
+}
+
+.playlist-search input {
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #4b5563;
+  background: #020617;
+  color: #e5e7eb;
+}
+
+/* =====================================================
+   SONG LIST (ONLY SCROLLING AREA)
+===================================================== */
+
+.playlist-songs {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px 100px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* scrollbar */
+
+.playlist-songs::-webkit-scrollbar {
+  width: 6px;
+}
+
+.playlist-songs::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 6px;
+}
+
+/* =====================================================
+   SONG ROW
+===================================================== */
+
+.playlist-song {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 14px;
+}
+
+.playlist-song:hover {
   background: #111827;
-  transform: translateY(-1px);
 }
 
-.playlist-overlay-thumb {
+.playlist-song img {
   width: 64px;
   height: 40px;
   border-radius: 8px;
   object-fit: cover;
 }
 
-.playlist-overlay-info {
+.playlist-song-info {
   flex: 1;
-  display: flex;
-  flex-direction: column;
 }
 
-.playlist-song-title {
-  font-size: 13px;
-  color: #e5e7eb;
+.playlist-song .title {
+  font-size: 14px;
 }
 
-.playlist-song-meta {
+.playlist-song .meta {
   font-size: 11px;
   color: #9ca3af;
 }
 
-.playlist-overlay-remove {
+.playlist-song .remove {
+  background: none;
   border: none;
-  background: transparent;
   color: #9ca3af;
-  font-size: 14px;
-  cursor: pointer;
 }
 
-.playlist-overlay-remove:hover {
+.playlist-song .remove:hover {
   color: #f87171;
 }
 
-@media (max-width: 600px) {
-  .playlist-overlay-content {
-    width: 100%;
-    height: 100dvh;      /* 🔥 LOCK HEIGHT */
-    max-height: none;    /* 🔥 REMOVE max-height */
-    padding: 0;          /* 🔥 REMOVE padding */
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;    /* 🔥 Parent must NOT scroll */
-  }
-}
+/* =====================================================
+   LOAD MORE INDICATOR
+===================================================== */
 
-
-.playlist-main-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.playlist-delete-btn {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 14px;
+.playlist-load-more {
+  text-align: center;
+  padding: 16px;
+  font-size: 12px;
   color: #9ca3af;
-  padding: 0 2px;
 }
 
-.playlist-delete-btn:hover {
-  color: #f87171;
-}
-/* ========== DELETE CONFIRMATION DIALOG ========== */
+/* =====================================================
+   DELETE CONFIRM MODAL
+===================================================== */
 
 .playlist-delete-overlay {
   position: fixed;
@@ -484,36 +361,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 999; /* above playlist-overlay */
+  z-index: 3000;
 }
 
 .playlist-delete-dialog {
   width: 90%;
   max-width: 360px;
   background: #020617;
-  border-radius: 14px;
+  border-radius: 16px;
+  padding: 16px;
   border: 1px solid #1f2937;
-  padding: 16px 18px 14px;
-  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.9);
-}
-
-.playlist-delete-title {
-  margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-  color: #f9fafb;
-}
-
-.playlist-delete-text {
-  margin: 0 0 14px;
-  font-size: 13px;
-  color: #9ca3af;
-  line-height: 1.4;
-}
-
-.playlist-delete-name {
-  color: #e5e7eb;
-  font-weight: 500;
 }
 
 .playlist-delete-actions {
@@ -522,30 +379,74 @@
   gap: 8px;
 }
 
-.playlist-delete-cancel {
-  padding: 6px 12px;
-  font-size: 12px;
+/* =========================================
+   DELETE CONFIRM ACTION BUTTONS
+========================================= */
+
+.playlist-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* CANCEL BUTTON */
+
+.playlist-delete-actions button:first-child {
+  padding: 8px 16px;
   border-radius: 999px;
   border: 1px solid #4b5563;
-  background: #020617;
+  background: transparent;
   color: #e5e7eb;
-  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.playlist-delete-cancel:hover {
+.playlist-delete-actions button:first-child:hover {
   background: #111827;
+  border-color: #6b7280;
 }
 
-.playlist-delete-confirm {
-  padding: 6px 12px;
-  font-size: 12px;
+/* DELETE BUTTON (DANGER) */
+
+.playlist-delete-actions button:last-child {
+  padding: 8px 16px;
   border-radius: 999px;
   border: 1px solid #b91c1c;
   background: #ef4444;
-  color: #f9fafb;
-  cursor: pointer;
+  color: #ffffff;
+  font-size: 13px;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.playlist-delete-confirm:hover {
+.playlist-delete-actions button:last-child:hover {
   background: #dc2626;
+  border-color: #991b1b;
+}
+
+/* OPTIONAL: FOCUS STATE */
+
+.playlist-delete-actions button:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+/* =====================================================
+   MOBILE
+===================================================== */
+
+@media (max-width: 600px) {
+  .playlist-page-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .playlist-song img {
+    width: 56px;
+    height: 36px;
+  }
+
+  .playlist-list {
+    max-height: calc(100vh - 180px);
+  }
 }
