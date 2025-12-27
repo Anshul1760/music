@@ -16,6 +16,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [ytResults, setYtResults] = useState([]);
   
+  // Persist current song on refresh
   const [currentYt, setCurrentYt] = useState(() => {
     const saved = localStorage.getItem("current_song");
     return saved ? JSON.parse(saved) : null;
@@ -32,6 +33,7 @@ export default function App() {
   const recoveryAttemptsRef = useRef(0);
   const playStartTimestampRef = useRef(0);
   const recoverBridgeRef = useRef(null); 
+  const isPlayingRef = useRef(false); // Track play state without closure issues
 
   // --- Playback States ---
   const [isPlaying, setIsPlaying] = useState(false);
@@ -47,6 +49,11 @@ export default function App() {
   const [playlists, setPlaylists] = useState([]);
 
   const [playerApiReady, setPlayerApiReady] = useState(false);
+
+  // Sync ref with state
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   // ---------------- Persist Current Song ----------------
   useEffect(() => {
@@ -66,20 +73,26 @@ export default function App() {
   // ---------------- Background Playback Fix ----------------
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden" || document.visibilityState === "visible") {
-        if (playerRef.current && isPlaying) {
-          playerRef.current.playVideo();
-          setTimeout(() => playerRef.current?.playVideo?.(), 150);
+      // If the screen locks or tab switches while a song is supposed to be playing
+      if (document.visibilityState === "hidden") {
+        if (playerRef.current && isPlayingRef.current) {
+          // Double-trigger resume for mobile browsers
+          playerRef.current.playVideo?.();
+          setTimeout(() => {
+            if (isPlayingRef.current) playerRef.current?.playVideo?.();
+          }, 200);
         }
       }
     };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handleVisibilityChange);
+    
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handleVisibilityChange);
     };
-  }, [isPlaying]);
+  }, []);
 
   // ---------------- YT API loader ----------------
   useEffect(() => {
@@ -121,8 +134,7 @@ export default function App() {
     fetchInitialData();
   }, [fetchPlaylists]);
 
-  // ---------------- Playlist Handlers (FIXED) ----------------
-
+  // ---------------- Playlist Handlers ----------------
   const handleCreatePlaylist = useCallback(async (name) => {
     try {
       const res = await fetch(`${API}/api/playlists`, {
@@ -238,7 +250,14 @@ export default function App() {
         playerRef.current = new window.YT.Player(instanceId, {
           videoId,
           height: "160", width: "320",
-          playerVars: { autoplay: 1, controls: 0, rel: 0, playsinline: 1, origin: window.location.origin, enablejsapi: 1 },
+          playerVars: { 
+            autoplay: 1, 
+            controls: 0, 
+            rel: 0, 
+            playsinline: 1, // Crucial for mobile background
+            origin: window.location.origin, 
+            enablejsapi: 1 
+          },
           events: {
             onReady: handlePlayerReady,
             onStateChange: (e) => recoverBridgeRef.current?.onStateChange(e),

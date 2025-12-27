@@ -1,9 +1,13 @@
 import React, { useState, useMemo, useEffect } from "react";
 import "./Playlist.css";
 
-const API_BASE = window.location.hostname === "localhost" 
-  ? "http://localhost:5001" 
-  : `http://${window.location.hostname}:5001`;
+// Dynamic API URL logic to prevent Mixed Content errors
+const API_BASE = process.env.REACT_APP_API_URL || 
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? "http://localhost:5001" 
+    : `http://${window.location.hostname}:5001`); 
+    // Note: If you have a deployed backend (Railway/Render), 
+    // you should put that HTTPS URL in REACT_APP_API_URL in Vercel settings.
 
 function Playlist({
   playlists,
@@ -82,24 +86,23 @@ function Playlist({
   const handleRemoveSong = async (song) => {
     if (!activePlaylist) return;
 
-    // If this is the "Liked" playlist, we MUST use the toggle endpoint 
-    // so the heart icon in App.jsx also updates.
     if (activePlaylist.isDefault) {
       try {
-        await fetch(`${API_BASE}/api/liked/toggle`, {
+        // Use the same toggle endpoint as the Heart button
+        const res = await fetch(`${API_BASE}/api/liked/toggle`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(song),
         });
-        // We trigger the generic remove handler just to force App.jsx to refresh the list
-        if (onRemoveSongFromPlaylist) {
+        
+        if (res.ok && onRemoveSongFromPlaylist) {
+          // Notify parent to refresh the state
           onRemoveSongFromPlaylist(activePlaylist.id, song.videoId);
         }
       } catch (err) {
         console.error("Error unliking song:", err);
       }
     } else {
-      // Normal playlist removal
       if (onRemoveSongFromPlaylist) {
         onRemoveSongFromPlaylist(activePlaylist.id, song.videoId);
       }
@@ -140,7 +143,9 @@ function Playlist({
   };
 
   const handleConfirmDelete = () => {
-    if (deleteTarget && onDeletePlaylist) onDeletePlaylist(deleteTarget.id);
+    if (deleteTarget && onDeletePlaylist) {
+      onDeletePlaylist(deleteTarget.id);
+    }
     setShowDeleteConfirm(false);
     setDeleteTarget(null);
   };
@@ -181,7 +186,9 @@ function Playlist({
                   )}
                 </div>
               </div>
-              <div className="playlist-meta">{pl.songs?.length || 0} song{pl.songs?.length !== 1 ? "s" : ""}</div>
+              <div className="playlist-meta">
+                {pl.songs?.length || 0} song{pl.songs?.length !== 1 ? "s" : ""}
+              </div>
             </div>
           ))}
         </div>
@@ -239,7 +246,14 @@ function Playlist({
             <div className="playlist-overlay-list">
               {activePlaylist.songs?.map((song) => (
                 <div key={song.videoId} className="playlist-overlay-item">
-                  {song.thumbnail && <img src={song.thumbnail} alt="" className="playlist-overlay-thumb" onClick={() => handlePlaySong(song)} />}
+                  {song.thumbnail && (
+                    <img 
+                      src={song.thumbnail} 
+                      alt="" 
+                      className="playlist-overlay-thumb" 
+                      onClick={() => handlePlaySong(song)} 
+                    />
+                  )}
                   <div className="playlist-overlay-info" onClick={() => handlePlaySong(song)}>
                     <div className="playlist-song-title">{song.title}</div>
                     <div className="playlist-song-meta">{song.channel}</div>
