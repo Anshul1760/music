@@ -1,19 +1,24 @@
-/* src/RecentlyPlayed.css */
-
 .recent-section {
   margin-bottom: 18px;
-  padding: 10px 8px 6px;
+  padding: 10px 12px;
   border-radius: 10px;
   background: #020617;
   border: 1px solid #1f2937;
+  transition: all 0.3s ease;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-/* header inside small card */
+/* When the player is closed, ensure the section spans the full layout */
+.recent-full-width {
+  width: 100% !important;
+}
+
 .recent-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
 
 .recent-title {
@@ -24,72 +29,70 @@
   color: #9ca3af;
 }
 
-/* Show more button in card */
 .recent-show-more {
   border: 1px solid #374151;
   background: #020617;
   color: #e5e7eb;
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 3px 12px;
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s;
-}
-
-.recent-show-more:hover {
-  background: #111827;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.8);
-}
-
-.recent-empty {
-  font-size: 13px;
-  color: #6b7280;
-  margin: 4px 0 2px;
 }
 
 .recent-list {
-  max-height: 220px;
+  max-height: 300px;
   overflow-y: auto;
 }
 
 .recent-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 4px;
+  gap: 12px;
+  padding: 8px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s ease, transform 0.1s ease;
+  transition: background 0.15s ease;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .recent-item:hover {
   background: #111827;
-  transform: translateY(-1px);
 }
 
 .recent-thumb {
-  width: 50px;
-  height: 32px;
-  border-radius: 6px;
+  width: 54px;
+  height: 36px;
+  border-radius: 4px;
   object-fit: cover;
+  flex-shrink: 0; /* Prevents image from squishing */
 }
 
+/* THE FIX: Allow info box to take all available width */
 .recent-info {
   display: flex;
   flex-direction: column;
+  flex: 1; 
+  min-width: 0; /* Prevents flex children from overflowing */
 }
 
 .recent-song-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: #e5e7eb;
-  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* max-width removed to allow full width usage */
+  width: 100%; 
 }
 
 .recent-song-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: #9ca3af;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ========== FULL SCREEN OVERLAY ========== */
@@ -97,78 +100,70 @@
 .recent-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.9);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 999; /* above app */
+  z-index: 9999;
+  backdrop-filter: blur(8px);
 }
 
 .recent-overlay-content {
-  width: 90%;
-  max-width: 700px;
-  max-height: 80vh;
+  width: 95%;
+  max-width: 650px;
+  max-height: 85vh;
   background: #020617;
   border-radius: 16px;
   border: 1px solid #1f2937;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.9);
-  padding: 12px 14px 14px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
 }
 
 .recent-overlay-header {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #1f2937;
 }
 
 .recent-overlay-back {
-  border: 1px solid #374151;
-  background: #020617;
-  color: #e5e7eb;
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  margin-right: 10px;
-  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s;
-}
-
-.recent-overlay-back:hover {
   background: #111827;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.9);
-}
-
-.recent-overlay-title {
-  margin: 0;
-  font-size: 16px;
-  color: #f9fafb;
+  border: 1px solid #374151;
+  color: white;
+  padding: 6px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  margin-right: 15px;
+  font-size: 13px;
 }
 
 .recent-overlay-list {
-  flex: 1;
   overflow-y: auto;
-  margin-top: 4px;
+  flex-grow: 1;
 }
 
-/* Larger items inside full-screen view */
 .recent-item-large {
-  padding: 8px 6px;
+  padding: 12px;
+  border-bottom: 1px solid #111827;
 }
 
 .recent-thumb-large {
-  width: 70px;
-  height: 44px;
-  border-radius: 8px;
+  width: 80px;
+  height: 45px;
+  border-radius: 6px;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
-/* responsive tweak */
 @media (max-width: 600px) {
   .recent-overlay-content {
-    width: 95%;
-    max-height: 85vh;
+    width: 100%;
+    height: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+    padding: 15px;
   }
 }

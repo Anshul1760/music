@@ -366,3 +366,76 @@
     align-items: center;
   }
 }
+/* Add/Modify these sections in App.css */
+
+.layout {
+  display: flex;
+  gap: 20px;
+  margin-top: 20px;
+  align-items: flex-start;
+  transition: all 0.3s ease;
+}
+
+/* When no song is playing, force the results card to be 100% wide */
+.layout-full {
+  display: block; /* Switch from Flex to Block */
+}
+
+.layout-full .card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Ensure RecentlyPlayed internal list also expands */
+.home-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 100%;
+}
+
+/* Media Queries update */
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+  }
+  
+  /* On mobile, ensure every card is always full width */
+  .card {
+    width: 100% !important;
+    flex: none;
+  }
+}
+.vibe-container {
+  position: relative;
+  height: 70px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 18px 0 10px;
+}
+
+.audio-loader {
+  position: absolute;
+  font-size: 14px;
+  color: #4c6fff;
+  font-weight: bold;
+  background: rgba(17, 24, 39, 0.9);
+  padding: 6px 14px;
+  border-radius: 20px;
+  z-index: 5;
+  animation: loader-pulse 1.5s infinite;
+  border: 1px solid #1f2937;
+}
+
+@keyframes loader-pulse {
+  0% { opacity: 0.6; transform: scale(0.98); }
+  50% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0.6; transform: scale(0.98); }
+}
+
+/* Ensure bars don't bounce while buffering */
+.vibe:not(.playing) .vibe-bar {
+  animation: none !important;
+  height: 10px;
+}

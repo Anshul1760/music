@@ -1,4 +1,3 @@
-// src/App.jsx
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 import RecentlyPlayed from "./RecentlyPlayed";
@@ -25,28 +24,58 @@ export default function App() {
   const instantiateTimerRef = useRef(null); 
   const iframeIdRef = useRef(null); 
 
-  // --- Logic Refs (To prevent dependency loops) ---
+  // --- Logic Refs ---
   const recoveryAttemptsRef = useRef(0);
   const shortPauseCountRef = useRef(0);
   const playStartTimestampRef = useRef(0);
-  const recoverBridgeRef = useRef(null); // Bridges the circular dependency
+  const recoverBridgeRef = useRef(null); 
 
-  // user-driven playback
-  const [userStartedPlayback, setUserStartedPlayback] = useState(false);
+  // --- Playback States ---
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false); 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const timeIntervalRef = useRef(null);
   const trackBarRef = useRef(null);
 
-  // app lists
+  // --- Lists & Navigation ---
   const [searchActive, setSearchActive] = useState(false);
   const [recentPlayed, setRecentPlayed] = useState([]);
   const [playlists, setPlaylists] = useState([]);
-  const [, setHistory] = useState([]); // Kept to satisfy state structure if needed
+  const [, setHistory] = useState([]); 
 
-  // --- Player API Ready ---
+  // --- API/Ready State ---
   const [playerApiReady, setPlayerApiReady] = useState(false);
+
+  // ---------------- UI Helpers ----------------
+  const formatTime = (sec) => {
+    if (!sec || isNaN(sec)) return "0:00";
+    const mins = Math.floor(sec / 60);
+    const secs = Math.floor(sec % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // ---------------- Background Playback Fix ----------------
+  // This listener forces the player to resume if the browser pauses it due to app switching or screen lock
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // If the screen locks or app switches while playing, force resume after a small delay
+        if (playerRef.current && isPlaying) {
+          setTimeout(() => {
+            try {
+              playerRef.current.playVideo();
+            } catch (e) {
+              console.warn("Background resume failed", e);
+            }
+          }, 150);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [isPlaying]);
 
   // ---------------- YT API loader ----------------
   useEffect(() => {
@@ -61,7 +90,7 @@ export default function App() {
     window.onYouTubeIframeAPIReady = () => setPlayerApiReady(true);
   }, []);
 
-  // ---------------- initial data ----------------
+  // ---------------- Initial Data Fetch ----------------
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
@@ -82,7 +111,7 @@ export default function App() {
     fetchInitialData();
   }, []);
 
-  // ---------------- time updates ----------------
+  // ---------------- Time Synchronization ----------------
   const stopTimeUpdates = useCallback(() => {
     if (timeIntervalRef.current) {
       clearInterval(timeIntervalRef.current);
@@ -93,26 +122,36 @@ export default function App() {
   const startTimeUpdates = useCallback(() => {
     stopTimeUpdates();
     timeIntervalRef.current = setInterval(() => {
-      if (playerRef.current && playerRef.current.getDuration) {
-        const ct = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
-        const dur = playerRef.current.getDuration ? playerRef.current.getDuration() : 0;
-        setCurrentTime(ct || 0);
-        setDuration(dur || 0);
+      if (playerRef.current && playerRef.current.getPlayerState) {
+        const state = playerRef.current.getPlayerState();
+        if (state === 1) { // Playing
+          setIsBuffering(false); 
+          const ct = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
+          const dur = playerRef.current.getDuration ? playerRef.current.getDuration() : 0;
+          setCurrentTime(ct || 0);
+          setDuration(dur || 0);
+        } else if (state === 3) { // Buffering
+          setIsBuffering(true);
+        }
       }
     }, 500);
   }, [stopTimeUpdates]);
 
-  // ---------------- Handlers ----------------
+  // ---------------- Player Handlers ----------------
 
   const handlePlayerReady = useCallback((event) => {
     recoveryAttemptsRef.current = 0;
-    try { event.target.mute?.(); } catch {}
+    try { 
+      event.target.unMute?.(); 
+      event.target.playVideo?.(); 
+    } catch {}
     try { const d = event.target.getDuration?.() || 0; setDuration(d); } catch {}
   }, []);
 
   const createIframeAndPlayer = useCallback((videoId) => {
     if (creatingRef.current) return;
     creatingRef.current = true;
+    setIsBuffering(true);
 
     if (instantiateTimerRef.current) clearTimeout(instantiateTimerRef.current);
 
@@ -125,6 +164,8 @@ export default function App() {
     if (playerRef.current && typeof playerRef.current.loadVideoById === "function") {
       try {
         playerRef.current.loadVideoById(videoId);
+        playerRef.current.unMute?.();
+        playerRef.current.playVideo?.();
         creatingRef.current = false;
         return;
       } catch (err) {
@@ -148,7 +189,13 @@ export default function App() {
           videoId,
           height: "160",
           width: "320",
-          playerVars: { autoplay: 0, controls: 0, rel: 0, playsinline: 1, origin: window.location.origin },
+          playerVars: { 
+            autoplay: 1, 
+            controls: 0, 
+            rel: 0, 
+            playsinline: 1, 
+            origin: window.location.origin 
+          },
           events: {
             onReady: handlePlayerReady,
             onStateChange: (e) => recoverBridgeRef.current?.onStateChange(e),
@@ -162,42 +209,31 @@ export default function App() {
   }, [handlePlayerReady]);
 
   const tryRecoverPlayback = useCallback(() => {
-    if (!userStartedPlayback || !playerRef.current || !window.YT) return;
+    if (!playerRef.current || !window.YT) return;
     if (recoveryAttemptsRef.current >= 4) return;
-
     recoveryAttemptsRef.current += 1;
-    const delay = 300 * recoveryAttemptsRef.current;
-
     setTimeout(() => {
-      try { playerRef.current.playVideo?.(); } catch {}
-      setTimeout(() => {
-        try {
-          const state = playerRef.current.getPlayerState?.();
-          if (state !== window.YT.PlayerState.PLAYING) {
-            if (recoveryAttemptsRef.current >= 3) {
-              const vid = currentYt?.videoId;
-              try { playerRef.current.destroy?.(); } catch {}
-              playerRef.current = null;
-              recoveryAttemptsRef.current = 0;
-              setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
-            } else {
-              tryRecoverPlayback();
-            }
-          }
-        } catch {}
-      }, 450);
-    }, delay);
-  }, [userStartedPlayback, currentYt, createIframeAndPlayer]);
+      try { 
+        playerRef.current.unMute?.();
+        playerRef.current.playVideo?.(); 
+      } catch {}
+    }, 500);
+  }, []);
 
-  // Set the Bridge so the Player can call recovery logic
   useEffect(() => {
     recoverBridgeRef.current = {
       tryRecover: tryRecoverPlayback,
       onStateChange: (event) => {
         const YT = window.YT;
         if (!YT) return;
+        
+        if (event.data === YT.PlayerState.BUFFERING) {
+          setIsBuffering(true);
+        }
+
         if (event.data === YT.PlayerState.PLAYING) {
           setIsPlaying(true);
+          setIsBuffering(false); 
           startTimeUpdates();
           recoveryAttemptsRef.current = 0;
           playStartTimestampRef.current = Date.now();
@@ -205,37 +241,17 @@ export default function App() {
         } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
           setIsPlaying(false);
           stopTimeUpdates();
-          try {
-            const t = playerRef.current.getCurrentTime?.() || 0;
-            const sincePlay = Date.now() - playStartTimestampRef.current;
-            if (userStartedPlayback && sincePlay < 4000 && t < 2) {
-              shortPauseCountRef.current += 1;
-              if (shortPauseCountRef.current >= 2) {
-                const vid = currentYt?.videoId;
-                try { playerRef.current.destroy?.(); } catch {}
-                playerRef.current = null;
-                shortPauseCountRef.current = 0;
-                recoveryAttemptsRef.current = 0;
-                setTimeout(() => { if (vid) createIframeAndPlayer(vid); }, 200);
-              } else {
-                tryRecoverPlayback();
-              }
-            }
-          } catch {}
         }
       }
     };
-  }, [tryRecoverPlayback, createIframeAndPlayer, startTimeUpdates, stopTimeUpdates, userStartedPlayback, currentYt]);
+  }, [tryRecoverPlayback, startTimeUpdates, stopTimeUpdates]);
 
-  // ---------------- lifecycle ----------------
   useEffect(() => {
     if (!playerApiReady || !currentYt) return;
     setIsPlaying(false);
+    setIsBuffering(true);
     setCurrentTime(0);
     setDuration(0);
-    recoveryAttemptsRef.current = 0;
-    shortPauseCountRef.current = 0;
-    setUserStartedPlayback(false);
     createIframeAndPlayer(currentYt.videoId);
   }, [playerApiReady, currentYt, createIframeAndPlayer]);
 
@@ -246,17 +262,7 @@ export default function App() {
     };
   }, [stopTimeUpdates]);
 
-  // ---------------- handlers ----------------
-  const handleUserStartPlayback = useCallback(() => {
-    if (!playerRef.current) return;
-    try {
-      playerRef.current.unMute?.();
-      playerRef.current.playVideo?.();
-      setUserStartedPlayback(true);
-    } catch (e) {
-      tryRecoverPlayback();
-    }
-  }, [tryRecoverPlayback]);
+  // ---------------- UI Event Handlers ----------------
 
   const handleSelectSong = useCallback((song) => {
     if (!song) return;
@@ -362,13 +368,10 @@ export default function App() {
     if (state === window.YT.PlayerState.PLAYING) {
       playerRef.current.pauseVideo?.();
     } else {
-      if (!userStartedPlayback) {
-        handleUserStartPlayback();
-      } else {
-        playerRef.current.playVideo?.();
-      }
+      playerRef.current.unMute?.();
+      playerRef.current.playVideo?.();
     }
-  }, [userStartedPlayback, handleUserStartPlayback]);
+  }, []);
 
   const handleSkipBackward = useCallback(() => {
     if (!playerRef.current) return;
@@ -389,18 +392,12 @@ export default function App() {
     playerRef.current.seekTo?.(percent * duration, true);
   }, [duration]);
 
-  const formatTime = (sec) => {
-    if (!sec || isNaN(sec)) return "0:00";
-    const totalSeconds = Math.floor(sec);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-  };
-
+  // ---------------- Final State Logic ----------------
   const likedPlaylist = playlists.find((pl) => pl.isDefault);
   const isCurrentLiked = !!currentYt && !!likedPlaylist && likedPlaylist.songs.some((s) => s.videoId === currentYt.videoId);
   const progressPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
   const showHome = !loading && ytResults.length === 0 && !searchActive;
+  const isPlayerActive = !!currentYt;
 
   return (
     <div className="app">
@@ -409,16 +406,23 @@ export default function App() {
         <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search songs..." />
         <button className="search-button" type="submit">Search</button>
       </form>
+      
       {loading && <p className="status-text">Searching...</p>}
-      <div className="layout">
+
+      <div className={`layout ${!isPlayerActive ? "layout-full" : ""}`}>
         <div className="card">
           <div className="results-header">
             {searchActive && <button type="button" className="back-button" onClick={handleBackFromSearch}>🔙</button>}
             <h2 className="results-title">Results</h2>
           </div>
+          
           {showHome ? (
             <div className="home-sections">
-              <RecentlyPlayed recentPlayed={recentPlayed} onSelectSong={handleSelectSong} />
+              <RecentlyPlayed 
+                recentPlayed={recentPlayed} 
+                onSelectSong={handleSelectSong} 
+                isPlaying={isPlayerActive} 
+              />
               <Playlist
                 playlists={playlists}
                 onCreatePlaylist={handleCreatePlaylist}
@@ -444,33 +448,39 @@ export default function App() {
             </div>
           )}
         </div>
-        <div className="card">
-          <h2>Now Playing</h2>
-          {currentYt ? (
-            <>
-              <div className="now-title">{currentYt.title}</div>
-              <div className="now-meta">{currentYt.channel}</div>
-              <div className={`vibe vibe-large ${isPlaying ? "playing" : ""}`}>
+
+        {currentYt && (
+          <div className="card">
+            <h2>Now Playing</h2>
+            <div className="now-title">{currentYt.title}</div>
+            <div className="now-meta">{currentYt.channel}</div>
+            
+            <div className="vibe-container">
+              {isBuffering && <div className="audio-loader">Loading Audio...</div>}
+              <div className={`vibe vibe-large ${isPlaying && !isBuffering ? "playing" : ""}`}>
                 {[...Array(5)].map((_, i) => <span key={i} className="vibe-bar" />)}
               </div>
-              <div className="yt-player-wrapper" style={{ height: 1, width: 1, overflow: "hidden", position: "absolute", left: -9999 }}>
-                <div id="yt-player-iframe" className="yt-player" />
+            </div>
+
+            <div className="yt-player-wrapper" style={{ height: 1, width: 1, overflow: "hidden", position: "absolute", left: -9999 }}>
+              <div id="yt-player-iframe" className="yt-player" />
+            </div>
+
+            <div className="track-container">
+              <div className="track-time"><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
+              <div className="track-bar" ref={trackBarRef} onClick={handleTrackClick}>
+                  <div className="track-bar-inner" style={{ width: `${progressPercent}%` }} />
               </div>
-              <div className="track-container">
-                <div className="track-time"><span>{formatTime(currentTime)}</span><span>{formatTime(duration)}</span></div>
-                <div className="track-bar" ref={trackBarRef} onClick={handleTrackClick}>
-                    <div className="track-bar-inner" style={{ width: `${progressPercent}%` }} />
-                </div>
-              </div>
-              <div className="controls">
-                <button onClick={handleSkipBackward}>↩️</button>
-                <button onClick={handleTogglePlay}>{isPlaying ? "⏸" : "▶"}</button>
-                <button onClick={handleSkipForward}>↪️</button>
-                <button onClick={handleToggleLike}>{isCurrentLiked ? "❤️" : "🤍"}</button>
-              </div>
-            </>
-          ) : <p className="status-text">Select a song from the results.</p>}
-        </div>
+            </div>
+
+            <div className="controls">
+              <button onClick={handleSkipBackward}>↩️</button>
+              <button onClick={handleTogglePlay}>{isPlaying ? "⏸" : "▶"}</button>
+              <button onClick={handleSkipForward}>↪️</button>
+              <button onClick={handleToggleLike}>{isCurrentLiked ? "❤️" : "🤍"}</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
