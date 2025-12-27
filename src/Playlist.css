@@ -152,31 +152,49 @@
 .playlist-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.9); /* Slightly darker for full-screen focus */
   display: flex;
   justify-content: center;
-  align-items: center;
-  z-index: 998;
+  align-items: stretch; /* Aligns box to the top of the screen */
+  z-index: 2000;
+  overflow: hidden;
 }
 
+/* 1. Main container - Lock it down and use Flex */
 .playlist-overlay-content {
-  width: 90%;
+  width: 100%;
   max-width: 720px;
-  max-height: 80vh;
+  height: 100dvh; /* Full screen height */
   background: #020617;
-  border-radius: 16px;
-  border: 1px solid #1f2937;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.9);
-  padding: 12px 14px 14px;
-  display: flex;
-  flex-direction: column;
+  border-radius: 0;
+  display: flex;          /* CRITICAL: Must be flex */
+  flex-direction: column; /* CRITICAL: Stack header on top of list */
+  overflow: hidden;       /* Parent should not scroll, only the list child */
+  position: relative;
+  padding: 0;
 }
+
+
 
 .playlist-overlay-header {
+  padding: 20px 15px 10px;
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  border-bottom: 1px solid #1f2937;
 }
+
+/* 3. SCROLL ONLY THE SONGS: Allow the list to fill the remaining space */
+
+
+
+.playlist-overlay-header {
+  flex-shrink: 0;
+  padding: 20px 15px 10px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid #1f2937;
+}
+
 
 .playlist-overlay-back {
   border: 1px solid #374151;
@@ -237,15 +255,16 @@
 /* add current row */
 
 .playlist-add-current-row {
+  position: relative;
+  top: 0; /* Adjust based on the height of your header */
+  z-index: 99;
+  background: #020617;
+  padding: 10px 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #020617;
-  border-radius: 10px;
-  border: 1px solid #111827;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-  margin-top: 4px;
+  border-radius: 0; /* Flat against sides while sticky */
+  margin: 0;
 }
 
 .playlist-add-current-label {
@@ -270,10 +289,15 @@
 /* search row */
 
 .playlist-search-row {
+  position: relative;
+  top: 0; /* Adjust based on cumulative height of header + add row */
+  z-index: 98;
+  background: #020617;
+  padding: 10px 15px 15px;
   display: flex;
   align-items: center;
-  margin-top: 4px;
   gap: 6px;
+  border-bottom: 1px solid #1f2937;
 }
 
 .playlist-search-input {
@@ -361,12 +385,15 @@
 
 /* songs list */
 
-.playlist-overlay-list {
-  flex: 1;
-  overflow-y: auto;
-  margin-top: 8px;
-}
 
+.playlist-overlay-list {
+  flex: 1;              /* Take up all remaining screen space */
+  overflow-y: auto !important; /* Enable the scrollbar */
+  padding: 10px 15px 40px;    /* Extra bottom padding for mobile */
+  min-height: 0;        /* Required for flex-scroll logic */
+  display: block;
+  -webkit-overflow-scrolling: touch; /* Smooth scroll for iPhone */
+}
 .playlist-overlay-item {
   display: flex;
   align-items: center;
@@ -419,10 +446,17 @@
 
 @media (max-width: 600px) {
   .playlist-overlay-content {
-    width: 95%;
-    max-height: 85vh;
+    width: 100%;
+    height: 100dvh;      /* 🔥 LOCK HEIGHT */
+    max-height: none;    /* 🔥 REMOVE max-height */
+    padding: 0;          /* 🔥 REMOVE padding */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;    /* 🔥 Parent must NOT scroll */
   }
 }
+
+
 .playlist-main-right {
   display: flex;
   align-items: center;
